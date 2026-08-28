@@ -2,6 +2,7 @@ export type Resolution = 'low' | 'medium' | 'high' | 'super';
 
 export interface UIState {
   resolution: Resolution;
+  cubeCount: number;
   showBox: boolean;
   showVelocity: boolean;
 }
@@ -9,10 +10,10 @@ export interface UIState {
 export type UIChangeCallback = (state: UIState) => void;
 
 const RESOLUTION_MAP: Record<Resolution, { label: string; segments: number }> = {
-  low:    { label: 'Low',    segments: 3 },
-  medium: { label: 'Medium', segments: 5 },
-  high:   { label: 'High',   segments: 8 },
-  super:  { label: 'Super',  segments: 12 },
+  low:    { label: 'Low (3×3×3)',    segments: 3 },
+  medium: { label: 'Medium (5×5×5)', segments: 5 },
+  high:   { label: 'High (8×8×8)',   segments: 8 },
+  super:  { label: 'Super (12×12×12)', segments: 12 },
 };
 
 export function getSegments(res: Resolution): number {
@@ -22,71 +23,148 @@ export function getSegments(res: Resolution): number {
 export function createUI(onChange: UIChangeCallback): UIState {
   const state: UIState = {
     resolution: 'high',
+    cubeCount: 1,
     showBox: false,
     showVelocity: false,
   };
 
-  const menu = document.createElement('div');
-  menu.id = 'menu';
+  // ── Panel container ─────────────────────────────────────────────
+  const panel = document.createElement('div');
+  panel.id = 'control-panel';
+  panel.className = 'panel-open';
 
-  // Resolution row
-  const resRow = document.createElement('div');
-  resRow.className = 'menu-row';
-
-  (Object.keys(RESOLUTION_MAP) as Resolution[]).forEach((key) => {
-    const item = document.createElement('label');
-    item.className = 'menu-item';
-
-    const radio = document.createElement('input');
-    radio.type = 'radio';
-    radio.name = 'resolution';
-    radio.value = key;
-    radio.checked = key === state.resolution;
-    radio.addEventListener('change', () => {
-      state.resolution = key;
-      onChange({ ...state });
-    });
-
-    const span = document.createElement('span');
-    span.textContent = RESOLUTION_MAP[key].label;
-
-    item.appendChild(radio);
-    item.appendChild(span);
-    resRow.appendChild(item);
+  // ── Toggle button (always visible) ──────────────────────────────
+  const toggle = document.createElement('button');
+  toggle.id = 'panel-toggle';
+  toggle.innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <path d="M10 13a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M10 1v2M10 17v2M1 10h2M17 10h2M3.93 3.93l1.41 1.41M14.66 14.66l1.41 1.41M3.93 16.07l1.41-1.41M14.66 5.34l1.41-1.41" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>`;
+  toggle.addEventListener('click', () => {
+    panel.classList.toggle('panel-open');
+    panel.classList.toggle('panel-closed');
   });
+  panel.appendChild(toggle);
 
-  menu.appendChild(resRow);
+  // ── Panel body (slides in/out) ──────────────────────────────────
+  const body = document.createElement('div');
+  body.id = 'panel-body';
 
-  // Debug toggles row
-  const debugRow = document.createElement('div');
-  debugRow.className = 'menu-row';
+  // Title
+  const title = document.createElement('div');
+  title.className = 'panel-title';
+  title.textContent = 'Jelly Controls';
+  body.appendChild(title);
 
-  const createCheckbox = (label: string, prop: 'showBox' | 'showVelocity') => {
-    const item = document.createElement('label');
-    item.className = 'menu-item';
+  // ── Resolution dropdown ─────────────────────────────────────────
+  const resGroup = createGroup('Resolution');
+  const resSelect = document.createElement('select');
+  resSelect.id = 'res-select';
+  (Object.keys(RESOLUTION_MAP) as Resolution[]).forEach((key) => {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = RESOLUTION_MAP[key].label;
+    if (key === state.resolution) opt.selected = true;
+    resSelect.appendChild(opt);
+  });
+  resSelect.addEventListener('change', () => {
+    state.resolution = resSelect.value as Resolution;
+    onChange({ ...state });
+  });
+  resGroup.appendChild(resSelect);
+  body.appendChild(resGroup);
 
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = state[prop];
-    cb.addEventListener('change', () => {
-      state[prop] = cb.checked;
-      onChange({ ...state });
-    });
+  // ── Cube count dropdown ─────────────────────────────────────────
+  const countGroup = createGroup('Cube Count');
+  const countSelect = document.createElement('select');
+  countSelect.id = 'count-select';
+  for (let i = 1; i <= 4; i++) {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = `${i} cube${i > 1 ? 's' : ''}`;
+    if (i === state.cubeCount) opt.selected = true;
+    countSelect.appendChild(opt);
+  }
+  countSelect.addEventListener('change', () => {
+    state.cubeCount = parseInt(countSelect.value, 10);
+    onChange({ ...state });
+  });
+  countGroup.appendChild(countSelect);
+  body.appendChild(countGroup);
 
-    const span = document.createElement('span');
-    span.textContent = label;
+  // ── Separator ───────────────────────────────────────────────────
+  const sep = document.createElement('div');
+  sep.className = 'panel-separator';
+  body.appendChild(sep);
 
-    item.appendChild(cb);
-    item.appendChild(span);
-    debugRow.appendChild(item);
-  };
+  // ── Debug section label ─────────────────────────────────────────
+  const debugLabel = document.createElement('div');
+  debugLabel.className = 'panel-section-label';
+  debugLabel.textContent = 'Debug';
+  body.appendChild(debugLabel);
 
-  createCheckbox('Box', 'showBox');
-  createCheckbox('Velocity', 'showVelocity');
+  // ── Toggle switches ─────────────────────────────────────────────
+  const boxToggle = createToggle('Wireframe', state.showBox, (val) => {
+    state.showBox = val;
+    onChange({ ...state });
+  });
+  body.appendChild(boxToggle);
 
-  menu.appendChild(debugRow);
+  const velToggle = createToggle('Velocity', state.showVelocity, (val) => {
+    state.showVelocity = val;
+    onChange({ ...state });
+  });
+  body.appendChild(velToggle);
 
-  document.body.appendChild(menu);
+  panel.appendChild(body);
+  document.body.appendChild(panel);
 
   return state;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+function createGroup(label: string): HTMLDivElement {
+  const group = document.createElement('div');
+  group.className = 'control-group';
+
+  const lbl = document.createElement('label');
+  lbl.className = 'control-label';
+  lbl.textContent = label;
+  group.appendChild(lbl);
+
+  return group;
+}
+
+function createToggle(
+  label: string,
+  initial: boolean,
+  onToggle: (val: boolean) => void,
+): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'toggle-row';
+
+  const lbl = document.createElement('span');
+  lbl.className = 'toggle-label';
+  lbl.textContent = label;
+  row.appendChild(lbl);
+
+  const switchEl = document.createElement('label');
+  switchEl.className = 'toggle-switch';
+
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = initial;
+  input.addEventListener('change', () => {
+    onToggle(input.checked);
+  });
+
+  const slider = document.createElement('span');
+  slider.className = 'toggle-slider';
+
+  switchEl.appendChild(input);
+  switchEl.appendChild(slider);
+  row.appendChild(switchEl);
+
+  return row;
 }
