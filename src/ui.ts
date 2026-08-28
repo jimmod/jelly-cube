@@ -4,7 +4,7 @@ export interface UIState {
   resolution: Resolution;
   cubeCount: number;
   elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 1.0
-  gravity: number; // -40 to 40, default -20
+  gravity: number; // 0 (float) to 10 (fast fall), default 5
   showBox: boolean;
   showVelocity: boolean;
 }
@@ -27,7 +27,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
     resolution: 'medium',
     cubeCount: 1,
     elasticity: 1.0,
-    gravity: -20,
+    gravity: 5,
     showBox: false,
     showVelocity: false,
   };
@@ -109,14 +109,14 @@ export function createUI(onChange: UIChangeCallback): UIState {
   const gravGroup = createGroup('');
   const gravLabel = document.createElement('label');
   gravLabel.className = 'control-label';
-  gravLabel.innerHTML = 'Gravity <span class="slider-value" id="grav-value">-20</span>';
+  gravLabel.innerHTML = 'Gravity <span class="slider-value" id="grav-value">5</span>';
   gravGroup.replaceChildren(gravLabel);
 
   const gravSlider = document.createElement('input');
   gravSlider.type = 'range';
   gravSlider.id = 'grav-slider';
-  gravSlider.min = '-40';
-  gravSlider.max = '40';
+  gravSlider.min = '0';
+  gravSlider.max = '10';
   gravSlider.step = '1';
   gravSlider.value = String(state.gravity);
   gravSlider.addEventListener('input', () => {

@@ -89,21 +89,24 @@ export class JellyPhysics {
   // Drag state - support multiple touches via Pointer Events
   activeDrags: Map<number, { target: THREE.Vector3, particles: DragInfo[] }> = new Map();
 
-  constructor(segments: number) {
+  // Screen bounds
+  bounds = { minX: -10, maxX: 10, minY: 0, maxY: 10, minZ: -10, maxZ: 10 };
+
+  constructor(segments: number, size: number) {
     this.segments = segments;
-    // More substeps for higher resolution to maintain stability
+    // Calculate appropriate substepping for stability
     this.substepsPerUpdate = segments <= 3 ? 1 : segments <= 5 ? 2 : segments <= 8 ? 4 : 8;
-    this.init(segments);
+    this.init(segments, size);
   }
 
-  init(segments: number) {
+  init(segments: number, size: number) {
     this.segments = segments;
     this.particles = [];
     this.springs = [];
 
     const n = segments + 1;
-    const halfSize = 2.0;
-    const step = (halfSize * 2) / segments;
+    const halfSize = size / 2.0;
+    const step = size / segments;
 
     // Calculate particle mass to keep total mass constant across resolutions
     const totalMass = 64.0; // Base mass from low res (4^3 * 1.0)
@@ -225,6 +228,10 @@ export class JellyPhysics {
     this.activeDrags.delete(pointerId);
   }
 
+  setBounds(minX: number, maxX: number, minY: number, maxY: number) {
+    this.bounds = { ...this.bounds, minX, maxX, minY, maxY };
+  }
+
   update(dt: number) {
     // Subdivide the timestep for stability at high resolutions
     const subDt = dt / this.substepsPerUpdate;
@@ -331,12 +338,38 @@ export class JellyPhysics {
       p.position.y += p.velocity.y * dt;
       p.position.z += p.velocity.z * dt;
 
-      // Floor collision
-      if (p.position.y < this.floorY) {
-        p.position.y = this.floorY;
-        p.velocity.x *= 0.7;
-        p.velocity.z *= 0.7;
-        if (p.velocity.y < 0) p.velocity.y *= -0.3;
+      // Screen boundary collisions
+      const restitution = 0.5; // bounce factor
+      const friction = 0.8; // slide friction
+
+      // Floor (minY)
+      if (p.position.y < this.bounds.minY) {
+        p.position.y = this.bounds.minY;
+        if (p.velocity.y < 0) p.velocity.y *= -restitution;
+        p.velocity.x *= friction;
+        p.velocity.z *= friction;
+      }
+      // Ceiling (maxY)
+      else if (p.position.y > this.bounds.maxY) {
+        p.position.y = this.bounds.maxY;
+        if (p.velocity.y > 0) p.velocity.y *= -restitution;
+        p.velocity.x *= friction;
+        p.velocity.z *= friction;
+      }
+
+      // Left Wall (minX)
+      if (p.position.x < this.bounds.minX) {
+        p.position.x = this.bounds.minX;
+        if (p.velocity.x < 0) p.velocity.x *= -restitution;
+        p.velocity.y *= friction;
+        p.velocity.z *= friction;
+      }
+      // Right Wall (maxX)
+      else if (p.position.x > this.bounds.maxX) {
+        p.position.x = this.bounds.maxX;
+        if (p.velocity.x > 0) p.velocity.x *= -restitution;
+        p.velocity.y *= friction;
+        p.velocity.z *= friction;
       }
     }
   }

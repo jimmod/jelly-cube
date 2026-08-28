@@ -110,8 +110,8 @@ interface JellyCube {
 
 const cubes: JellyCube[] = [];
 
-function createJellyCube(segments: number, offsetX: number): JellyCube {
-  const physics = new JellyPhysics(segments);
+function createJellyCube(segments: number, size: number, offsetX: number): JellyCube {
+  const physics = new JellyPhysics(segments, size);
 
   // Apply offset to all particles
   for (const p of physics.particles) {
@@ -119,7 +119,6 @@ function createJellyCube(segments: number, offsetX: number): JellyCube {
     p.restPosition.x += offsetX;
   }
 
-  const size = 4.0;
   const geo = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
 
   const mat = new THREE.ShaderMaterial({
@@ -291,26 +290,50 @@ function getCubeOffsets(count: number): number[] {
 }
 
 function rebuildAllCubes(segments: number, count: number) {
-  // Remove existing cubes
+  // Clear existing
   for (const cube of cubes) {
     removeJellyCube(cube);
   }
   cubes.length = 0;
 
+  // Calculate dynamic size based on screen width (so it's smaller on mobile)
+  // Max size is 4.0. On a 375px phone screen, it will be 375 * 0.008 = 3.0
+  const cubeSize = Math.min(4.0, window.innerWidth * 0.008);
+
   // Create new cubes
   const offsets = getCubeOffsets(count);
   for (let i = 0; i < count; i++) {
-    cubes.push(createJellyCube(segments, offsets[i]));
+    cubes.push(createJellyCube(segments, cubeSize, offsets[i]));
   }
 
   // Adjust camera to frame all cubes
   updateCamera(count);
+  
+  // Update screen bounds for collisions
+  updateBounds();
 }
 
 function updateCamera(cubeCount: number) {
   const distance = 16 + (cubeCount - 1) * 4;
   camera.position.set(0, 4, distance);
   camera.lookAt(0, 2, 0);
+}
+
+function updateBounds() {
+  const boundsRaycaster = new THREE.Raycaster();
+  const zPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  
+  boundsRaycaster.setFromCamera(new THREE.Vector2(-1, 1), camera);
+  const topLeft = new THREE.Vector3();
+  boundsRaycaster.ray.intersectPlane(zPlane, topLeft);
+
+  boundsRaycaster.setFromCamera(new THREE.Vector2(1, -1), camera);
+  const bottomRight = new THREE.Vector3();
+  boundsRaycaster.ray.intersectPlane(zPlane, bottomRight);
+  
+  for (const cube of cubes) {
+    cube.physics.setBounds(topLeft.x, bottomRight.x, Math.max(0, bottomRight.y), topLeft.y);
+  }
 }
 
 // ─── Interaction ─────────────────────────────────────────────────────────────
@@ -420,7 +443,8 @@ function onUIChange(state: UIState) {
   // Update elasticity & gravity
   for (const cube of cubes) {
     cube.physics.stiffnessMultiplier = state.elasticity;
-    cube.physics.gravity.y = state.gravity;
+    // Map 0 -> 0, 5 -> -20, 10 -> -40
+    cube.physics.gravity.y = - (state.gravity * 4);
   }
 
   // Box toggle
@@ -455,6 +479,9 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  
+  // Update physics bounds and potentially rebuild if size changes drastically
+  updateBounds();
 });
 
 // ─── Init ────────────────────────────────────────────────────────────────────
