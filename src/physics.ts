@@ -84,6 +84,7 @@ export class JellyPhysics {
   globalDamping = 0.998;
   segments: number;
   substepsPerUpdate: number;
+  stiffnessMultiplier = 1.0; // Elasticity: scales all spring stiffness at runtime
 
   // Drag state
   dragTarget: THREE.Vector3 = new THREE.Vector3();
@@ -242,7 +243,36 @@ export class JellyPhysics {
 
     // Spring forces
     for (const s of this.springs) {
-      s.applyForce();
+      const dx = s.p2.position.x - s.p1.position.x;
+      const dy = s.p2.position.y - s.p1.position.y;
+      const dz = s.p2.position.z - s.p1.position.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist < 1e-8) continue;
+
+      const stretch = dist - s.restLength;
+      const forceMag = s.stiffness * this.stiffnessMultiplier * stretch;
+
+      const invDist = 1.0 / dist;
+      const dirX = dx * invDist;
+      const dirY = dy * invDist;
+      const dirZ = dz * invDist;
+
+      const rvx = s.p2.velocity.x - s.p1.velocity.x;
+      const rvy = s.p2.velocity.y - s.p1.velocity.y;
+      const rvz = s.p2.velocity.z - s.p1.velocity.z;
+      const dampF = (rvx * dirX + rvy * dirY + rvz * dirZ) * s.damping;
+
+      const fx = dirX * (forceMag + dampF);
+      const fy = dirY * (forceMag + dampF);
+      const fz = dirZ * (forceMag + dampF);
+
+      s.p1.force.x += fx;
+      s.p1.force.y += fy;
+      s.p1.force.z += fz;
+
+      s.p2.force.x -= fx;
+      s.p2.force.y -= fy;
+      s.p2.force.z -= fz;
     }
 
     // Drag: position-based — directly move grabbed particles toward target

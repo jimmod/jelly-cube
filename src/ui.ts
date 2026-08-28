@@ -3,6 +3,7 @@ export type Resolution = 'low' | 'medium' | 'high' | 'super';
 export interface UIState {
   resolution: Resolution;
   cubeCount: number;
+  elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 1.0
   showBox: boolean;
   showVelocity: boolean;
 }
@@ -24,6 +25,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
   const state: UIState = {
     resolution: 'high',
     cubeCount: 1,
+    elasticity: 1.0,
     showBox: false,
     showVelocity: false,
   };
@@ -74,23 +76,32 @@ export function createUI(onChange: UIChangeCallback): UIState {
   resGroup.appendChild(resSelect);
   body.appendChild(resGroup);
 
-  // ── Cube count dropdown ─────────────────────────────────────────
-  const countGroup = createGroup('Cube Count');
-  const countSelect = document.createElement('select');
-  countSelect.id = 'count-select';
-  for (let i = 1; i <= 4; i++) {
-    const opt = document.createElement('option');
-    opt.value = String(i);
-    opt.textContent = `${i} cube${i > 1 ? 's' : ''}`;
-    if (i === state.cubeCount) opt.selected = true;
-    countSelect.appendChild(opt);
-  }
-  countSelect.addEventListener('change', () => {
-    state.cubeCount = parseInt(countSelect.value, 10);
+
+
+  // ── Elasticity slider ───────────────────────────────────────────
+  const elastGroup = createGroup('');
+  const elastLabel = document.createElement('label');
+  elastLabel.className = 'control-label';
+  elastLabel.innerHTML = 'Elasticity <span class="slider-value" id="elast-value">1.0×</span>';
+  // Replace the auto-generated label
+  elastGroup.replaceChildren(elastLabel);
+
+  const elastSlider = document.createElement('input');
+  elastSlider.type = 'range';
+  elastSlider.id = 'elast-slider';
+  elastSlider.min = '0.1';
+  elastSlider.max = '3.0';
+  elastSlider.step = '0.1';
+  elastSlider.value = String(state.elasticity);
+  elastSlider.addEventListener('input', () => {
+    const val = parseFloat(elastSlider.value);
+    state.elasticity = val;
+    const valueEl = document.getElementById('elast-value');
+    if (valueEl) valueEl.textContent = `${val.toFixed(1)}×`;
     onChange({ ...state });
   });
-  countGroup.appendChild(countSelect);
-  body.appendChild(countGroup);
+  elastGroup.appendChild(elastSlider);
+  body.appendChild(elastGroup);
 
   // ── Separator ───────────────────────────────────────────────────
   const sep = document.createElement('div');

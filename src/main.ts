@@ -415,7 +415,8 @@ function onUIChange(state: UIState) {
   const countChanged = state.cubeCount !== cubes.length;
 
   if (segmentsChanged || countChanged) {
-    rebuildAllCubes(getSegments(state.resolution), state.cubeCount);
+    // Only ever build 1 cube now as multiple cubes have no collisions
+    rebuildAllCubes(getSegments(state.resolution), 1);
 
     // Rebuild debug helpers if active
     for (const cube of cubes) {
@@ -428,6 +429,11 @@ function onUIChange(state: UIState) {
         scene.add(cube.velocityHelper);
       }
     }
+  }
+
+  // Update elasticity
+  for (const cube of cubes) {
+    cube.physics.stiffnessMultiplier = state.elasticity;
   }
 
   // Box toggle
@@ -465,7 +471,7 @@ window.addEventListener('resize', () => {
 });
 
 // ─── Init ────────────────────────────────────────────────────────────────────
-rebuildAllCubes(getSegments(uiState.resolution), uiState.cubeCount);
+rebuildAllCubes(getSegments(uiState.resolution), 1);
 
 // ─── Animation Loop ──────────────────────────────────────────────────────────
 const clock = new THREE.Clock();
