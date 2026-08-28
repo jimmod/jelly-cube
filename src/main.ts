@@ -60,7 +60,7 @@ scene.add(floor);
 // Jelly setup
 const size = 4;
 const segments = 4; // 4 segments = 5 vertices per edge = 125 total
-const jellyPhysics = new JellyPhysics(size, segments, 1500, 20);
+const jellyPhysics = new JellyPhysics(size, segments, 200, 5);
 
 const jellyGeo = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
 const jellyMat = new THREE.MeshPhysicalMaterial({
@@ -86,7 +86,7 @@ const vertexParticleMapping: number[] = [];
 
 for (let i = 0; i < positionAttribute.count; i++) {
     const vx = positionAttribute.getX(i);
-    const vy = positionAttribute.getY(i) + size / 2; // Shift up because physics starts above floor
+    const vy = positionAttribute.getY(i) + size; // Shift up because physics center is at Y = size
     const vz = positionAttribute.getZ(i);
     
     // Find closest particle
