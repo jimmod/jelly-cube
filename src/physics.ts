@@ -106,6 +106,10 @@ export class JellyPhysics {
     const halfSize = 2.0;
     const step = (halfSize * 2) / segments;
 
+    // Calculate particle mass to keep total mass constant across resolutions
+    const totalMass = 64.0; // Base mass from low res (4^3 * 1.0)
+    const particleMass = totalMass / (n * n * n);
+
     // Create particles
     for (let iz = 0; iz < n; iz++) {
       for (let iy = 0; iy < n; iy++) {
@@ -113,7 +117,7 @@ export class JellyPhysics {
           const px = ix * step - halfSize;
           const py = iy * step + 0.5; // bottom of cube at y=0.5 (just above floor)
           const pz = iz * step - halfSize;
-          this.particles.push(new Particle(px, py, pz, 1.0));
+          this.particles.push(new Particle(px, py, pz, particleMass));
         }
       }
     }
