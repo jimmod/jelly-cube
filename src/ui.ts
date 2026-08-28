@@ -23,7 +23,7 @@ export function getSegments(res: Resolution): number {
 
 export function createUI(onChange: UIChangeCallback): UIState {
   const state: UIState = {
-    resolution: 'high',
+    resolution: 'medium',
     cubeCount: 1,
     elasticity: 1.0,
     showBox: false,

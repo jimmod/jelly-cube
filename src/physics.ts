@@ -86,10 +86,8 @@ export class JellyPhysics {
   substepsPerUpdate: number;
   stiffnessMultiplier = 1.0; // Elasticity: scales all spring stiffness at runtime
 
-  // Drag state
-  dragTarget: THREE.Vector3 = new THREE.Vector3();
-  dragParticles: DragInfo[] = [];
-  isDragging = false;
+  // Drag state - support multiple touches via Pointer Events
+  activeDrags: Map<number, { target: THREE.Vector3, particles: DragInfo[] }> = new Map();
 
   constructor(segments: number) {
     this.segments = segments;
@@ -176,10 +174,9 @@ export class JellyPhysics {
     }
   }
 
-  startDrag(hitPoint: THREE.Vector3, radius: number) {
-    this.dragParticles = [];
-    this.isDragging = true;
-    this.dragTarget.copy(hitPoint);
+  startDrag(pointerId: number, hitPoint: THREE.Vector3, radius: number) {
+    const dragParticles: DragInfo[] = [];
+    const dragTarget = hitPoint.clone();
 
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
@@ -188,7 +185,7 @@ export class JellyPhysics {
         const t = dist / radius;
         // Smooth falloff: cubic hermite
         const weight = 1.0 - t * t * (3 - 2 * t);
-        this.dragParticles.push({
+        dragParticles.push({
           particleIndex: i,
           weight,
           offset: new THREE.Vector3().subVectors(p.position, hitPoint),
@@ -197,7 +194,7 @@ export class JellyPhysics {
     }
 
     // Fallback: grab closest
-    if (this.dragParticles.length === 0) {
+    if (dragParticles.length === 0) {
       let minDist = Infinity;
       let closestIdx = 0;
       for (let i = 0; i < this.particles.length; i++) {
@@ -207,21 +204,25 @@ export class JellyPhysics {
           closestIdx = i;
         }
       }
-      this.dragParticles.push({
+      dragParticles.push({
         particleIndex: closestIdx,
         weight: 1.0,
         offset: new THREE.Vector3().subVectors(this.particles[closestIdx].position, hitPoint),
       });
     }
+
+    this.activeDrags.set(pointerId, { target: dragTarget, particles: dragParticles });
   }
 
-  updateDrag(target: THREE.Vector3) {
-    this.dragTarget.copy(target);
+  updateDrag(pointerId: number, target: THREE.Vector3) {
+    const drag = this.activeDrags.get(pointerId);
+    if (drag) {
+      drag.target.copy(target);
+    }
   }
 
-  endDrag() {
-    this.isDragging = false;
-    this.dragParticles = [];
+  endDrag(pointerId: number) {
+    this.activeDrags.delete(pointerId);
   }
 
   update(dt: number) {
@@ -277,28 +278,30 @@ export class JellyPhysics {
 
     // Drag: position-based — directly move grabbed particles toward target
     // Scale strength inversely with substeps so total impulse per frame is consistent
-    if (this.isDragging) {
+    if (this.activeDrags.size > 0) {
       const baseStrength = 500 / this.substepsPerUpdate;
       const dampFactor = this.substepsPerUpdate <= 2 ? 0.88 : 0.80;
 
-      for (const info of this.dragParticles) {
-        const p = this.particles[info.particleIndex];
+      for (const drag of this.activeDrags.values()) {
+        for (const info of drag.particles) {
+          const p = this.particles[info.particleIndex];
 
-        // Target position for this particle = dragTarget + original offset * (1-weight)
-        const lerpW = info.weight;
-        const targetX = this.dragTarget.x + info.offset.x * (1 - lerpW);
-        const targetY = this.dragTarget.y + info.offset.y * (1 - lerpW);
-        const targetZ = this.dragTarget.z + info.offset.z * (1 - lerpW);
+          // Target position for this particle = dragTarget + original offset * (1-weight)
+          const lerpW = info.weight;
+          const targetX = drag.target.x + info.offset.x * (1 - lerpW);
+          const targetY = drag.target.y + info.offset.y * (1 - lerpW);
+          const targetZ = drag.target.z + info.offset.z * (1 - lerpW);
 
-        const strength = baseStrength * info.weight;
-        p.force.x += (targetX - p.position.x) * strength;
-        p.force.y += (targetY - p.position.y) * strength;
-        p.force.z += (targetZ - p.position.z) * strength;
+          const strength = baseStrength * info.weight;
+          p.force.x += (targetX - p.position.x) * strength;
+          p.force.y += (targetY - p.position.y) * strength;
+          p.force.z += (targetZ - p.position.z) * strength;
 
-        // Damping on dragged particles — stronger for more substeps
-        p.velocity.x *= dampFactor;
-        p.velocity.y *= dampFactor;
-        p.velocity.z *= dampFactor;
+          // Damping on dragged particles — stronger for more substeps
+          p.velocity.x *= dampFactor;
+          p.velocity.y *= dampFactor;
+          p.velocity.z *= dampFactor;
+        }
       }
     }
 

@@ -316,36 +316,22 @@ function updateCamera(cubeCount: number) {
 // ─── Interaction ─────────────────────────────────────────────────────────────
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-const dragPlane = new THREE.Plane();
 const _intersectPt = new THREE.Vector3();
-let isDragging = false;
-let draggedCube: JellyCube | null = null;
 
-function getClientPos(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
-  if ('touches' in event) {
-    if (event.touches.length === 0) return null;
-    return { x: event.touches[0].clientX, y: event.touches[0].clientY };
-  }
-  return { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY };
-}
+// Track active pointers for multi-touch
+const activePointers = new Map<number, { cube: JellyCube, plane: THREE.Plane }>();
 
 function screenToNDC(clientX: number, clientY: number) {
   mouse.x = (clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(clientY / window.innerHeight) * 2 + 1;
 }
 
-function onPointerDown(event: MouseEvent | TouchEvent) {
-  // Ignore clicks on the control panel
-  const target = event.target as HTMLElement;
-  if (target.closest('#control-panel')) return;
+function onPointerDown(event: PointerEvent) {
+  if (event.target instanceof HTMLElement && event.target.closest('#control-panel')) return;
 
-  const pos = getClientPos(event);
-  if (!pos) return;
-
-  screenToNDC(pos.x, pos.y);
+  screenToNDC(event.clientX, event.clientY);
   raycaster.setFromCamera(mouse, camera);
 
-  // Check all cube meshes for intersection
   let closestHit: THREE.Intersection | null = null;
   let hitCube: JellyCube | null = null;
 
@@ -361,51 +347,51 @@ function onPointerDown(event: MouseEvent | TouchEvent) {
 
   if (closestHit && hitCube) {
     const hitPoint = closestHit.point;
-
     const normal = new THREE.Vector3();
     camera.getWorldDirection(normal);
-    dragPlane.setFromNormalAndCoplanarPoint(normal, hitPoint);
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, hitPoint);
 
     const grabRadius = 2.5;
-    hitCube.physics.startDrag(hitPoint, grabRadius);
-    isDragging = true;
-    draggedCube = hitCube;
+    hitCube.physics.startDrag(event.pointerId, hitPoint, grabRadius);
+    
+    activePointers.set(event.pointerId, { cube: hitCube, plane });
     document.body.style.cursor = 'grabbing';
-
+    
+    renderer.domElement.setPointerCapture(event.pointerId);
     event.preventDefault();
   }
 }
 
-function onPointerMove(event: MouseEvent | TouchEvent) {
-  if (!isDragging || !draggedCube) return;
+function onPointerMove(event: PointerEvent) {
+  const active = activePointers.get(event.pointerId);
+  if (!active) return;
 
-  const pos = getClientPos(event);
-  if (!pos) return;
-
-  screenToNDC(pos.x, pos.y);
+  screenToNDC(event.clientX, event.clientY);
   raycaster.setFromCamera(mouse, camera);
-  raycaster.ray.intersectPlane(dragPlane, _intersectPt);
+  raycaster.ray.intersectPlane(active.plane, _intersectPt);
 
-  draggedCube.physics.updateDrag(_intersectPt);
+  active.cube.physics.updateDrag(event.pointerId, _intersectPt);
   event.preventDefault();
 }
 
-function onPointerUp() {
-  if (isDragging && draggedCube) {
-    draggedCube.physics.endDrag();
-    isDragging = false;
-    draggedCube = null;
-    document.body.style.cursor = 'auto';
+function onPointerUp(event: PointerEvent) {
+  const active = activePointers.get(event.pointerId);
+  if (active) {
+    active.cube.physics.endDrag(event.pointerId);
+    activePointers.delete(event.pointerId);
+    
+    if (activePointers.size === 0) {
+      document.body.style.cursor = 'auto';
+    }
+    
+    renderer.domElement.releasePointerCapture(event.pointerId);
   }
 }
 
-renderer.domElement.addEventListener('mousedown', onPointerDown);
-window.addEventListener('mousemove', onPointerMove);
-window.addEventListener('mouseup', onPointerUp);
-
-renderer.domElement.addEventListener('touchstart', onPointerDown, { passive: false });
-window.addEventListener('touchmove', onPointerMove, { passive: false });
-window.addEventListener('touchend', onPointerUp);
+renderer.domElement.addEventListener('pointerdown', onPointerDown);
+renderer.domElement.addEventListener('pointermove', onPointerMove);
+renderer.domElement.addEventListener('pointerup', onPointerUp);
+renderer.domElement.addEventListener('pointercancel', onPointerUp);
 
 // ─── UI ──────────────────────────────────────────────────────────────────────
 let uiState: UIState;
