@@ -33,8 +33,8 @@ dirLight.shadow.mapSize.width = 2048;
 dirLight.shadow.mapSize.height = 2048;
 dirLight.shadow.camera.near = 0.1;
 dirLight.shadow.camera.far = 40;
-dirLight.shadow.camera.left = -10;
-dirLight.shadow.camera.right = 10;
+dirLight.shadow.camera.left = -15;
+dirLight.shadow.camera.right = 15;
 dirLight.shadow.camera.top = 10;
 dirLight.shadow.camera.bottom = -10;
 dirLight.shadow.bias = -0.002;
@@ -96,61 +96,56 @@ const normalShader = {
   `,
 };
 
-// ─── State ───────────────────────────────────────────────────────────────────
-let jellyPhysics: JellyPhysics;
-let jellyMesh: THREE.Mesh;
-let jellyGeo: THREE.BufferGeometry;
-let jellyMat: THREE.ShaderMaterial;
-let vertexParticleMapping: number[] = [];
+// ─── JellyCube: encapsulates a single cube ──────────────────────────────────
+interface JellyCube {
+  physics: JellyPhysics;
+  mesh: THREE.Mesh;
+  geo: THREE.BufferGeometry;
+  mat: THREE.ShaderMaterial;
+  vertexParticleMapping: number[];
+  boxHelper: THREE.Group | null;
+  velocityHelper: THREE.LineSegments | null;
+  offsetX: number; // world-space X offset
+}
 
-// Debug objects
-let boxHelper: THREE.Group | null = null;
-let velocityHelper: THREE.LineSegments | null = null;
+const cubes: JellyCube[] = [];
 
-function buildJelly(segments: number) {
-  // Remove old mesh
-  if (jellyMesh) {
-    scene.remove(jellyMesh);
-    jellyGeo.dispose();
-  }
-  if (boxHelper) {
-    scene.remove(boxHelper);
-    boxHelper = null;
-  }
-  if (velocityHelper) {
-    scene.remove(velocityHelper);
-    velocityHelper = null;
+function createJellyCube(segments: number, offsetX: number): JellyCube {
+  const physics = new JellyPhysics(segments);
+
+  // Apply offset to all particles
+  for (const p of physics.particles) {
+    p.position.x += offsetX;
+    p.restPosition.x += offsetX;
   }
 
-  jellyPhysics = new JellyPhysics(segments);
+  const size = 4.0;
+  const geo = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
 
-  const size = 4.0; // full size
-  jellyGeo = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
-
-  jellyMat = new THREE.ShaderMaterial({
+  const mat = new THREE.ShaderMaterial({
     vertexShader: normalShader.vertexShader,
     fragmentShader: normalShader.fragmentShader,
     side: THREE.DoubleSide,
   });
 
-  jellyMesh = new THREE.Mesh(jellyGeo, jellyMat);
-  jellyMesh.castShadow = true;
-  jellyMesh.receiveShadow = true;
-  scene.add(jellyMesh);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
 
   // Map vertices to nearest physics particle
-  const posAttr = jellyGeo.attributes.position;
-  vertexParticleMapping = [];
+  const posAttr = geo.attributes.position;
+  const vertexParticleMapping: number[] = [];
 
   for (let i = 0; i < posAttr.count; i++) {
-    const vx = posAttr.getX(i);
-    const vy = posAttr.getY(i) + size / 2 + 0.5; // offset: geom centered at 0, physics bottom at 0.5
+    const vx = posAttr.getX(i) + offsetX;
+    const vy = posAttr.getY(i) + size / 2 + 0.5;
     const vz = posAttr.getZ(i);
 
     let minDist = Infinity;
     let closestIdx = 0;
-    for (let j = 0; j < jellyPhysics.particles.length; j++) {
-      const p = jellyPhysics.particles[j];
+    for (let j = 0; j < physics.particles.length; j++) {
+      const p = physics.particles[j];
       const dx = p.restPosition.x - vx;
       const dy = p.restPosition.y - vy;
       const dz = p.restPosition.z - vz;
@@ -162,10 +157,36 @@ function buildJelly(segments: number) {
     }
     vertexParticleMapping.push(closestIdx);
   }
+
+  return {
+    physics,
+    mesh,
+    geo,
+    mat,
+    vertexParticleMapping,
+    boxHelper: null,
+    velocityHelper: null,
+    offsetX,
+  };
+}
+
+function removeJellyCube(cube: JellyCube) {
+  scene.remove(cube.mesh);
+  cube.geo.dispose();
+  cube.mat.dispose();
+  if (cube.boxHelper) {
+    scene.remove(cube.boxHelper);
+    cube.boxHelper = null;
+  }
+  if (cube.velocityHelper) {
+    scene.remove(cube.velocityHelper);
+    cube.velocityHelper = null;
+  }
 }
 
 // ─── Debug: Box wireframe overlay ────────────────────────────────────────────
-function buildBoxHelper(segments: number): THREE.Group {
+function buildBoxHelper(cube: JellyCube): THREE.Group {
+  const segments = cube.physics.segments;
   const group = new THREE.Group();
   const n = segments;
   const size = 2.0;
@@ -193,16 +214,15 @@ function buildBoxHelper(segments: number): THREE.Group {
   return group;
 }
 
-function updateBoxHelper() {
-  if (!boxHelper) return;
-  const n = jellyPhysics.segments;
+function updateBoxHelper(cube: JellyCube) {
+  if (!cube.boxHelper) return;
+  const n = cube.physics.segments;
   const nn = n + 1;
   let childIdx = 0;
 
   for (let iz = 0; iz < n; iz++) {
     for (let iy = 0; iy < n; iy++) {
       for (let ix = 0; ix < n; ix++) {
-        // Cell center = average of 8 corner particles
         const getIdx = (x: number, y: number, z: number) => z * nn * nn + y * nn + x;
 
         const corners = [
@@ -214,15 +234,15 @@ function updateBoxHelper() {
 
         let cx = 0, cy = 0, cz = 0;
         for (const ci of corners) {
-          const p = jellyPhysics.particles[ci];
+          const p = cube.physics.particles[ci];
           cx += p.position.x;
           cy += p.position.y;
           cz += p.position.z;
         }
         cx /= 8; cy /= 8; cz /= 8;
 
-        if (childIdx < boxHelper.children.length) {
-          boxHelper.children[childIdx].position.set(cx, cy, cz);
+        if (childIdx < cube.boxHelper.children.length) {
+          cube.boxHelper.children[childIdx].position.set(cx, cy, cz);
         }
         childIdx++;
       }
@@ -231,23 +251,23 @@ function updateBoxHelper() {
 }
 
 // ─── Debug: Velocity lines ───────────────────────────────────────────────────
-function buildVelocityHelper(): THREE.LineSegments {
-  const count = jellyPhysics.particles.length;
+function buildVelocityHelper(cube: JellyCube): THREE.LineSegments {
+  const count = cube.physics.particles.length;
   const geo = new THREE.BufferGeometry();
-  const positions = new Float32Array(count * 6); // 2 points per line
+  const positions = new Float32Array(count * 6);
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
   const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 });
   return new THREE.LineSegments(geo, mat);
 }
 
-function updateVelocityHelper() {
-  if (!velocityHelper) return;
-  const positions = (velocityHelper.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
+function updateVelocityHelper(cube: JellyCube) {
+  if (!cube.velocityHelper) return;
+  const positions = (cube.velocityHelper.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
   const scale = 0.15;
 
-  for (let i = 0; i < jellyPhysics.particles.length; i++) {
-    const p = jellyPhysics.particles[i];
+  for (let i = 0; i < cube.physics.particles.length; i++) {
+    const p = cube.physics.particles[i];
     const base = i * 6;
     positions[base] = p.position.x;
     positions[base + 1] = p.position.y;
@@ -256,7 +276,41 @@ function updateVelocityHelper() {
     positions[base + 4] = p.position.y + p.velocity.y * scale;
     positions[base + 5] = p.position.z + p.velocity.z * scale;
   }
-  (velocityHelper.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+  (cube.velocityHelper.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+}
+
+// ─── Cube layout ─────────────────────────────────────────────────────────────
+function getCubeOffsets(count: number): number[] {
+  const spacing = 5.0; // distance between cube centers
+  const offsets: number[] = [];
+  const totalWidth = (count - 1) * spacing;
+  for (let i = 0; i < count; i++) {
+    offsets.push(i * spacing - totalWidth / 2);
+  }
+  return offsets;
+}
+
+function rebuildAllCubes(segments: number, count: number) {
+  // Remove existing cubes
+  for (const cube of cubes) {
+    removeJellyCube(cube);
+  }
+  cubes.length = 0;
+
+  // Create new cubes
+  const offsets = getCubeOffsets(count);
+  for (let i = 0; i < count; i++) {
+    cubes.push(createJellyCube(segments, offsets[i]));
+  }
+
+  // Adjust camera to frame all cubes
+  updateCamera(count);
+}
+
+function updateCamera(cubeCount: number) {
+  const distance = 16 + (cubeCount - 1) * 4;
+  camera.position.set(0, 4, distance);
+  camera.lookAt(0, 2, 0);
 }
 
 // ─── Interaction ─────────────────────────────────────────────────────────────
@@ -265,6 +319,7 @@ const mouse = new THREE.Vector2();
 const dragPlane = new THREE.Plane();
 const _intersectPt = new THREE.Vector3();
 let isDragging = false;
+let draggedCube: JellyCube | null = null;
 
 function getClientPos(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
   if ('touches' in event) {
@@ -280,25 +335,41 @@ function screenToNDC(clientX: number, clientY: number) {
 }
 
 function onPointerDown(event: MouseEvent | TouchEvent) {
+  // Ignore clicks on the control panel
+  const target = event.target as HTMLElement;
+  if (target.closest('#control-panel')) return;
+
   const pos = getClientPos(event);
   if (!pos) return;
 
   screenToNDC(pos.x, pos.y);
   raycaster.setFromCamera(mouse, camera);
 
-  const intersects = raycaster.intersectObject(jellyMesh);
-  if (intersects.length > 0) {
-    const hitPoint = intersects[0].point;
+  // Check all cube meshes for intersection
+  let closestHit: THREE.Intersection | null = null;
+  let hitCube: JellyCube | null = null;
 
-    // Create a drag plane facing the camera through the hit point
+  for (const cube of cubes) {
+    const intersects = raycaster.intersectObject(cube.mesh);
+    if (intersects.length > 0) {
+      if (!closestHit || intersects[0].distance < closestHit.distance) {
+        closestHit = intersects[0];
+        hitCube = cube;
+      }
+    }
+  }
+
+  if (closestHit && hitCube) {
+    const hitPoint = closestHit.point;
+
     const normal = new THREE.Vector3();
     camera.getWorldDirection(normal);
     dragPlane.setFromNormalAndCoplanarPoint(normal, hitPoint);
 
-    // Grab radius — larger for more fluid deformation
     const grabRadius = 2.5;
-    jellyPhysics.startDrag(hitPoint, grabRadius);
+    hitCube.physics.startDrag(hitPoint, grabRadius);
     isDragging = true;
+    draggedCube = hitCube;
     document.body.style.cursor = 'grabbing';
 
     event.preventDefault();
@@ -306,7 +377,7 @@ function onPointerDown(event: MouseEvent | TouchEvent) {
 }
 
 function onPointerMove(event: MouseEvent | TouchEvent) {
-  if (!isDragging) return;
+  if (!isDragging || !draggedCube) return;
 
   const pos = getClientPos(event);
   if (!pos) return;
@@ -315,14 +386,15 @@ function onPointerMove(event: MouseEvent | TouchEvent) {
   raycaster.setFromCamera(mouse, camera);
   raycaster.ray.intersectPlane(dragPlane, _intersectPt);
 
-  jellyPhysics.updateDrag(_intersectPt);
+  draggedCube.physics.updateDrag(_intersectPt);
   event.preventDefault();
 }
 
 function onPointerUp() {
-  if (isDragging) {
-    jellyPhysics.endDrag();
+  if (isDragging && draggedCube) {
+    draggedCube.physics.endDrag();
     isDragging = false;
+    draggedCube = null;
     document.body.style.cursor = 'auto';
   }
 }
@@ -339,39 +411,45 @@ window.addEventListener('touchend', onPointerUp);
 let uiState: UIState;
 
 function onUIChange(state: UIState) {
-  // Resolution change
-  if (getSegments(state.resolution) !== jellyPhysics.segments) {
-    buildJelly(getSegments(state.resolution));
+  const segmentsChanged = cubes.length === 0 || getSegments(state.resolution) !== cubes[0].physics.segments;
+  const countChanged = state.cubeCount !== cubes.length;
+
+  if (segmentsChanged || countChanged) {
+    rebuildAllCubes(getSegments(state.resolution), state.cubeCount);
 
     // Rebuild debug helpers if active
-    if (state.showBox) {
-      if (boxHelper) scene.remove(boxHelper);
-      boxHelper = buildBoxHelper(jellyPhysics.segments);
-      scene.add(boxHelper);
-    }
-    if (state.showVelocity) {
-      if (velocityHelper) scene.remove(velocityHelper);
-      velocityHelper = buildVelocityHelper();
-      scene.add(velocityHelper);
+    for (const cube of cubes) {
+      if (state.showBox) {
+        cube.boxHelper = buildBoxHelper(cube);
+        scene.add(cube.boxHelper);
+      }
+      if (state.showVelocity) {
+        cube.velocityHelper = buildVelocityHelper(cube);
+        scene.add(cube.velocityHelper);
+      }
     }
   }
 
   // Box toggle
-  if (state.showBox && !boxHelper) {
-    boxHelper = buildBoxHelper(jellyPhysics.segments);
-    scene.add(boxHelper);
-  } else if (!state.showBox && boxHelper) {
-    scene.remove(boxHelper);
-    boxHelper = null;
+  for (const cube of cubes) {
+    if (state.showBox && !cube.boxHelper) {
+      cube.boxHelper = buildBoxHelper(cube);
+      scene.add(cube.boxHelper);
+    } else if (!state.showBox && cube.boxHelper) {
+      scene.remove(cube.boxHelper);
+      cube.boxHelper = null;
+    }
   }
 
   // Velocity toggle
-  if (state.showVelocity && !velocityHelper) {
-    velocityHelper = buildVelocityHelper();
-    scene.add(velocityHelper);
-  } else if (!state.showVelocity && velocityHelper) {
-    scene.remove(velocityHelper);
-    velocityHelper = null;
+  for (const cube of cubes) {
+    if (state.showVelocity && !cube.velocityHelper) {
+      cube.velocityHelper = buildVelocityHelper(cube);
+      scene.add(cube.velocityHelper);
+    } else if (!state.showVelocity && cube.velocityHelper) {
+      scene.remove(cube.velocityHelper);
+      cube.velocityHelper = null;
+    }
   }
 
   uiState = state;
@@ -387,7 +465,7 @@ window.addEventListener('resize', () => {
 });
 
 // ─── Init ────────────────────────────────────────────────────────────────────
-buildJelly(getSegments(uiState.resolution));
+rebuildAllCubes(getSegments(uiState.resolution), uiState.cubeCount);
 
 // ─── Animation Loop ──────────────────────────────────────────────────────────
 const clock = new THREE.Clock();
@@ -400,25 +478,29 @@ function animate() {
   const frameDt = Math.min(clock.getDelta(), 0.05);
   accumulator += frameDt;
 
-  // Fixed timestep physics
+  // Fixed timestep physics for all cubes
   while (accumulator >= physicsDt) {
-    jellyPhysics.update(physicsDt);
+    for (const cube of cubes) {
+      cube.physics.update(physicsDt);
+    }
     accumulator -= physicsDt;
   }
 
-  // Update mesh vertices from physics
-  const posAttr = jellyGeo.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < posAttr.count; i++) {
-    const p = jellyPhysics.particles[vertexParticleMapping[i]];
-    posAttr.setXYZ(i, p.position.x, p.position.y, p.position.z);
-  }
-  posAttr.needsUpdate = true;
-  jellyGeo.computeVertexNormals();
-  jellyGeo.computeBoundingSphere();
+  // Update mesh vertices from physics for all cubes
+  for (const cube of cubes) {
+    const posAttr = cube.geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < posAttr.count; i++) {
+      const p = cube.physics.particles[cube.vertexParticleMapping[i]];
+      posAttr.setXYZ(i, p.position.x, p.position.y, p.position.z);
+    }
+    posAttr.needsUpdate = true;
+    cube.geo.computeVertexNormals();
+    cube.geo.computeBoundingSphere();
 
-  // Update debug helpers
-  if (uiState.showBox && boxHelper) updateBoxHelper();
-  if (uiState.showVelocity && velocityHelper) updateVelocityHelper();
+    // Update debug helpers
+    if (uiState.showBox && cube.boxHelper) updateBoxHelper(cube);
+    if (uiState.showVelocity && cube.velocityHelper) updateVelocityHelper(cube);
+  }
 
   renderer.render(scene, camera);
 }
