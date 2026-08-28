@@ -126,11 +126,11 @@ export class JellyPhysics {
     // Index helper
     const idx = (x: number, y: number, z: number) => z * n * n + y * n + x;
 
-    // Spring stiffness: use a moderate base that works at all resolutions
-    // The key insight: spring restLength is proportional to 1/segments,
-    // so forces are naturally proportional. We just need moderate stiffness.
-    const stiffness = 300;
-    const damping = 5;
+    // Spring stiffness: scale inversely with segments so material properties
+    // remain consistent across different resolutions. (Area / Length = 1/N)
+    // Base values calibrated for Medium (segments=5).
+    const stiffness = 300 * (5 / segments);
+    const damping = 5 * (5 / segments);
 
     // Create springs — structural, shear, and bend
     for (let iz = 0; iz < n; iz++) {
