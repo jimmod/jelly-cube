@@ -417,9 +417,10 @@ function onUIChange(state: UIState) {
     }
   }
 
-  // Update elasticity
+  // Update elasticity & gravity
   for (const cube of cubes) {
     cube.physics.stiffnessMultiplier = state.elasticity;
+    cube.physics.gravity.y = state.gravity;
   }
 
   // Box toggle

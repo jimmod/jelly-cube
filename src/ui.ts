@@ -4,6 +4,7 @@ export interface UIState {
   resolution: Resolution;
   cubeCount: number;
   elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 1.0
+  gravity: number; // -40 to 40, default -20
   showBox: boolean;
   showVelocity: boolean;
 }
@@ -26,6 +27,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
     resolution: 'medium',
     cubeCount: 1,
     elasticity: 1.0,
+    gravity: -20,
     showBox: false,
     showVelocity: false,
   };
@@ -102,6 +104,30 @@ export function createUI(onChange: UIChangeCallback): UIState {
   });
   elastGroup.appendChild(elastSlider);
   body.appendChild(elastGroup);
+
+  // ── Gravity slider ──────────────────────────────────────────────
+  const gravGroup = createGroup('');
+  const gravLabel = document.createElement('label');
+  gravLabel.className = 'control-label';
+  gravLabel.innerHTML = 'Gravity <span class="slider-value" id="grav-value">-20</span>';
+  gravGroup.replaceChildren(gravLabel);
+
+  const gravSlider = document.createElement('input');
+  gravSlider.type = 'range';
+  gravSlider.id = 'grav-slider';
+  gravSlider.min = '-40';
+  gravSlider.max = '40';
+  gravSlider.step = '1';
+  gravSlider.value = String(state.gravity);
+  gravSlider.addEventListener('input', () => {
+    const val = parseFloat(gravSlider.value);
+    state.gravity = val;
+    const valueEl = document.getElementById('grav-value');
+    if (valueEl) valueEl.textContent = `${val}`;
+    onChange({ ...state });
+  });
+  gravGroup.appendChild(gravSlider);
+  body.appendChild(gravGroup);
 
   // ── Separator ───────────────────────────────────────────────────
   const sep = document.createElement('div');
