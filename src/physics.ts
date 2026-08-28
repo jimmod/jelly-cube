@@ -246,31 +246,34 @@ export class JellyPhysics {
     }
 
     // Drag: position-based — directly move grabbed particles toward target
+    // Scale strength inversely with substeps so total impulse per frame is consistent
     if (this.isDragging) {
+      const baseStrength = 500 / this.substepsPerUpdate;
+      const dampFactor = this.substepsPerUpdate <= 2 ? 0.88 : 0.80;
+
       for (const info of this.dragParticles) {
         const p = this.particles[info.particleIndex];
 
         // Target position for this particle = dragTarget + original offset * (1-weight)
-        // Highest weight particles go exactly to target, lower weight ones keep some offset
         const lerpW = info.weight;
         const targetX = this.dragTarget.x + info.offset.x * (1 - lerpW);
         const targetY = this.dragTarget.y + info.offset.y * (1 - lerpW);
         const targetZ = this.dragTarget.z + info.offset.z * (1 - lerpW);
 
-        // Very strong spring toward target position
-        const strength = 500 * info.weight;
+        const strength = baseStrength * info.weight;
         p.force.x += (targetX - p.position.x) * strength;
         p.force.y += (targetY - p.position.y) * strength;
         p.force.z += (targetZ - p.position.z) * strength;
 
-        // Heavy damping on dragged particles
-        p.velocity.x *= 0.85;
-        p.velocity.y *= 0.85;
-        p.velocity.z *= 0.85;
+        // Damping on dragged particles — stronger for more substeps
+        p.velocity.x *= dampFactor;
+        p.velocity.y *= dampFactor;
+        p.velocity.z *= dampFactor;
       }
     }
 
     // Semi-implicit Euler integration
+    const maxSpeed = 40; // velocity clamp to prevent flyaway
     for (const p of this.particles) {
       const ax = p.force.x * p.invMass;
       const ay = p.force.y * p.invMass;
@@ -279,6 +282,15 @@ export class JellyPhysics {
       p.velocity.x = (p.velocity.x + ax * dt) * this.globalDamping;
       p.velocity.y = (p.velocity.y + ay * dt) * this.globalDamping;
       p.velocity.z = (p.velocity.z + az * dt) * this.globalDamping;
+
+      // Clamp velocity to prevent instability
+      const speed = Math.sqrt(p.velocity.x * p.velocity.x + p.velocity.y * p.velocity.y + p.velocity.z * p.velocity.z);
+      if (speed > maxSpeed) {
+        const scale = maxSpeed / speed;
+        p.velocity.x *= scale;
+        p.velocity.y *= scale;
+        p.velocity.z *= scale;
+      }
 
       p.prevPosition.copy(p.position);
 
