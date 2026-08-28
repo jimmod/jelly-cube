@@ -2,9 +2,8 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: #1a1a2e; /* Fallback */
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #c0c0c0;
+  font-family: 'Courier New', Courier, monospace;
 }
 
 #app {
@@ -15,4 +14,43 @@ body {
 canvas {
   display: block;
   outline: none;
+}
+
+#menu {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  left: 16px;
+  top: 16px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 16px;
+  font-weight: bold;
+  color: white;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 10;
+}
+
+.menu-row {
+  display: flex;
+  margin-bottom: 4px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+  cursor: pointer;
+  gap: 2px;
+}
+
+.menu-item input[type="radio"],
+.menu-item input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: #4488ff;
+  margin: 0 2px 0 0;
+}
+
+.menu-item span {
+  pointer-events: none;
 }

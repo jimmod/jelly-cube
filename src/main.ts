@@ -1,252 +1,426 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { JellyPhysics } from './physics';
+import { createUI, getSegments } from './ui';
+import type { UIState } from './ui';
 import './style.css';
 
-// Scene setup
+// ─── Scene ───────────────────────────────────────────────────────────────────
 const container = document.getElementById('app')!;
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
+scene.background = new THREE.Color(0xc0c0c0);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(10, 8, 15);
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 4, 16);
+camera.lookAt(0, 2, 0);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 container.appendChild(renderer.domElement);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.enablePan = false;
-controls.minDistance = 5;
-controls.maxDistance = 30;
-controls.maxPolarAngle = Math.PI / 2 + 0.1; // Don't go below floor much
-
-// Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+// ─── Lighting ────────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(5, 10, 7);
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(5, 15, 10);
 dirLight.castShadow = true;
 dirLight.shadow.mapSize.width = 2048;
 dirLight.shadow.mapSize.height = 2048;
-dirLight.shadow.bias = -0.001;
+dirLight.shadow.camera.near = 0.1;
+dirLight.shadow.camera.far = 40;
+dirLight.shadow.camera.left = -10;
+dirLight.shadow.camera.right = 10;
+dirLight.shadow.camera.top = 10;
+dirLight.shadow.camera.bottom = -10;
+dirLight.shadow.bias = -0.002;
 scene.add(dirLight);
 
-const pointLight = new THREE.PointLight(0xff0066, 2, 20);
-pointLight.position.set(-5, 5, -5);
-scene.add(pointLight);
+const fillLight = new THREE.DirectionalLight(0x8888ff, 0.4);
+fillLight.position.set(-5, 5, -5);
+scene.add(fillLight);
 
-const pointLight2 = new THREE.PointLight(0x0066ff, 2, 20);
-pointLight2.position.set(5, 5, -5);
-scene.add(pointLight2);
-
-// Floor
-const floorGeo = new THREE.PlaneGeometry(100, 100);
-const floorMat = new THREE.MeshStandardMaterial({ 
-    color: 0x16213e,
-    roughness: 0.1,
-    metalness: 0.2
-});
+// ─── Invisible floor (for shadow only) ──────────────────────────────────────
+const floorGeo = new THREE.PlaneGeometry(80, 80);
+const floorMat = new THREE.ShadowMaterial({ opacity: 0.15 });
 const floor = new THREE.Mesh(floorGeo, floorMat);
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-// Jelly setup
-const size = 4;
-const segments = 4; // 4 segments = 5 vertices per edge = 125 total
-const jellyPhysics = new JellyPhysics(size, segments, 200, 5);
+// ─── Normal-color material (matches reference: surface normals → color) ─────
+const normalShader = {
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vWorldPos;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vNormal;
+    varying vec3 vWorldPos;
 
-const jellyGeo = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
-const jellyMat = new THREE.MeshPhysicalMaterial({
-    color: 0xff3366,
-    metalness: 0.1,
-    roughness: 0.1,
-    transmission: 0.9,
-    ior: 1.5,
-    thickness: 2.0,
-    transparent: true,
-    opacity: 1,
-    side: THREE.DoubleSide
-});
-const jellyMesh = new THREE.Mesh(jellyGeo, jellyMat);
-jellyMesh.castShadow = true;
-jellyMesh.receiveShadow = true;
-scene.add(jellyMesh);
+    void main() {
+      vec3 n = normalize(vNormal);
+      
+      // Map normals to vibrant magenta/green like the reference
+      vec3 color = vec3(
+        n.x * 0.5 + 0.5,
+        n.y * 0.5 + 0.5,
+        n.z * 0.3 + 0.7
+      );
+      
+      // Enhance saturation and vibrancy
+      color = pow(color, vec3(0.8));
+      color *= 1.1;
+      
+      // Subtle lighting
+      vec3 lightDir = normalize(vec3(0.5, 1.0, 0.7));
+      float diffuse = max(dot(n, lightDir), 0.0) * 0.3 + 0.7;
+      color *= diffuse;
+      
+      // Edge darkening for depth
+      vec3 viewDir = normalize(cameraPosition - vWorldPos);
+      float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 2.0);
+      color = mix(color, color * 0.5, fresnel * 0.3);
+      
+      gl_FragColor = vec4(color, 1.0);
+    }
+  `,
+};
 
-// Map vertices to particles
-// Box geometry creates vertices with positions that we can match exactly to our physics grid
-const positionAttribute = jellyGeo.attributes.position;
-const vertexParticleMapping: number[] = [];
+// ─── State ───────────────────────────────────────────────────────────────────
+let jellyPhysics: JellyPhysics;
+let jellyMesh: THREE.Mesh;
+let jellyGeo: THREE.BufferGeometry;
+let jellyMat: THREE.ShaderMaterial;
+let vertexParticleMapping: number[] = [];
 
-for (let i = 0; i < positionAttribute.count; i++) {
-    const vx = positionAttribute.getX(i);
-    const vy = positionAttribute.getY(i) + size; // Shift up because physics center is at Y = size
-    const vz = positionAttribute.getZ(i);
-    
-    // Find closest particle
+// Debug objects
+let boxHelper: THREE.Group | null = null;
+let velocityHelper: THREE.LineSegments | null = null;
+
+function buildJelly(segments: number) {
+  // Remove old mesh
+  if (jellyMesh) {
+    scene.remove(jellyMesh);
+    jellyGeo.dispose();
+  }
+  if (boxHelper) {
+    scene.remove(boxHelper);
+    boxHelper = null;
+  }
+  if (velocityHelper) {
+    scene.remove(velocityHelper);
+    velocityHelper = null;
+  }
+
+  jellyPhysics = new JellyPhysics(segments);
+
+  const size = 4.0; // full size
+  jellyGeo = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
+
+  jellyMat = new THREE.ShaderMaterial({
+    vertexShader: normalShader.vertexShader,
+    fragmentShader: normalShader.fragmentShader,
+    side: THREE.DoubleSide,
+  });
+
+  jellyMesh = new THREE.Mesh(jellyGeo, jellyMat);
+  jellyMesh.castShadow = true;
+  jellyMesh.receiveShadow = true;
+  scene.add(jellyMesh);
+
+  // Map vertices to nearest physics particle
+  const posAttr = jellyGeo.attributes.position;
+  vertexParticleMapping = [];
+
+  for (let i = 0; i < posAttr.count; i++) {
+    const vx = posAttr.getX(i);
+    const vy = posAttr.getY(i) + size / 2 + 0.5; // offset: geom centered at 0, physics bottom at 0.5
+    const vz = posAttr.getZ(i);
+
     let minDist = Infinity;
-    let closestIdx = -1;
+    let closestIdx = 0;
     for (let j = 0; j < jellyPhysics.particles.length; j++) {
-        const p = jellyPhysics.particles[j];
-        const dist = Math.sqrt(
-            Math.pow(p.position.x - vx, 2) + 
-            Math.pow(p.position.y - vy, 2) + 
-            Math.pow(p.position.z - vz, 2)
-        );
-        if (dist < minDist) {
-            minDist = dist;
-            closestIdx = j;
-        }
+      const p = jellyPhysics.particles[j];
+      const dx = p.restPosition.x - vx;
+      const dy = p.restPosition.y - vy;
+      const dz = p.restPosition.z - vz;
+      const dist = dx * dx + dy * dy + dz * dz;
+      if (dist < minDist) {
+        minDist = dist;
+        closestIdx = j;
+      }
     }
     vertexParticleMapping.push(closestIdx);
+  }
 }
 
-// Interaction
+// ─── Debug: Box wireframe overlay ────────────────────────────────────────────
+function buildBoxHelper(segments: number): THREE.Group {
+  const group = new THREE.Group();
+  const n = segments;
+  const size = 2.0;
+  const step = (size * 2) / n;
+
+  const mat = new THREE.LineBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.4 });
+
+  for (let iz = 0; iz < n; iz++) {
+    for (let iy = 0; iy < n; iy++) {
+      for (let ix = 0; ix < n; ix++) {
+        const cx = ix * step - size + step / 2;
+        const cy = iy * step - size + step / 2;
+        const cz = iz * step - size + step / 2;
+        const boxGeo = new THREE.BoxGeometry(step * 0.95, step * 0.95, step * 0.95);
+        const edges = new THREE.EdgesGeometry(boxGeo);
+        const line = new THREE.LineSegments(edges, mat);
+        line.position.set(cx, cy, cz);
+        group.add(line);
+        boxGeo.dispose();
+        edges.dispose();
+      }
+    }
+  }
+
+  return group;
+}
+
+function updateBoxHelper() {
+  if (!boxHelper) return;
+  const n = jellyPhysics.segments;
+  const nn = n + 1;
+  let childIdx = 0;
+
+  for (let iz = 0; iz < n; iz++) {
+    for (let iy = 0; iy < n; iy++) {
+      for (let ix = 0; ix < n; ix++) {
+        // Cell center = average of 8 corner particles
+        const getIdx = (x: number, y: number, z: number) => z * nn * nn + y * nn + x;
+
+        const corners = [
+          getIdx(ix, iy, iz), getIdx(ix + 1, iy, iz),
+          getIdx(ix, iy + 1, iz), getIdx(ix + 1, iy + 1, iz),
+          getIdx(ix, iy, iz + 1), getIdx(ix + 1, iy, iz + 1),
+          getIdx(ix, iy + 1, iz + 1), getIdx(ix + 1, iy + 1, iz + 1),
+        ];
+
+        let cx = 0, cy = 0, cz = 0;
+        for (const ci of corners) {
+          const p = jellyPhysics.particles[ci];
+          cx += p.position.x;
+          cy += p.position.y;
+          cz += p.position.z;
+        }
+        cx /= 8; cy /= 8; cz /= 8;
+
+        if (childIdx < boxHelper.children.length) {
+          boxHelper.children[childIdx].position.set(cx, cy, cz);
+        }
+        childIdx++;
+      }
+    }
+  }
+}
+
+// ─── Debug: Velocity lines ───────────────────────────────────────────────────
+function buildVelocityHelper(): THREE.LineSegments {
+  const count = jellyPhysics.particles.length;
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 6); // 2 points per line
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const mat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 });
+  return new THREE.LineSegments(geo, mat);
+}
+
+function updateVelocityHelper() {
+  if (!velocityHelper) return;
+  const positions = (velocityHelper.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
+  const scale = 0.15;
+
+  for (let i = 0; i < jellyPhysics.particles.length; i++) {
+    const p = jellyPhysics.particles[i];
+    const base = i * 6;
+    positions[base] = p.position.x;
+    positions[base + 1] = p.position.y;
+    positions[base + 2] = p.position.z;
+    positions[base + 3] = p.position.x + p.velocity.x * scale;
+    positions[base + 4] = p.position.y + p.velocity.y * scale;
+    positions[base + 5] = p.position.z + p.velocity.z * scale;
+  }
+  (velocityHelper.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+}
+
+// ─── Interaction ─────────────────────────────────────────────────────────────
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-let draggedParticle: any = null;
-const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-const dragOffset = new THREE.Vector3();
+const dragPlane = new THREE.Plane();
+const _intersectPt = new THREE.Vector3();
+let isDragging = false;
 
-// Helper to find nearest particle to ray intersection
-function getIntersectedParticle(event: MouseEvent | TouchEvent) {
-    let clientX, clientY;
-    if ('touches' in event) {
-        clientX = event.touches[0].clientX;
-        clientY = event.touches[0].clientY;
-    } else {
-        clientX = (event as MouseEvent).clientX;
-        clientY = (event as MouseEvent).clientY;
-    }
-
-    mouse.x = (clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(clientY / window.innerHeight) * 2 + 1;
-    
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(jellyMesh);
-    
-    if (intersects.length > 0) {
-        // Find closest particle to the intersection point
-        const pt = intersects[0].point;
-        let minDist = Infinity;
-        let closestP = null;
-        for (const p of jellyPhysics.particles) {
-            const d = p.position.distanceTo(pt);
-            if (d < minDist) {
-                minDist = d;
-                closestP = p;
-            }
-        }
-        
-        if (closestP) {
-            plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(plane.normal), pt);
-            raycaster.ray.intersectPlane(plane, dragOffset);
-            dragOffset.sub(closestP.position);
-            return closestP;
-        }
-    }
-    return null;
+function getClientPos(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
+  if ('touches' in event) {
+    if (event.touches.length === 0) return null;
+    return { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }
+  return { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY };
 }
 
-const onPointerDown = (event: MouseEvent | TouchEvent) => {
-    draggedParticle = getIntersectedParticle(event);
-    if (draggedParticle) {
-        controls.enabled = false;
-        // Make it much heavier/stiffer while dragging to pull the rest of the cube
-        draggedParticle.mass = 100;
-        draggedParticle.invMass = 1.0 / 100;
-        document.body.style.cursor = 'grabbing';
-    }
-};
+function screenToNDC(clientX: number, clientY: number) {
+  mouse.x = (clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+}
 
-const onPointerMove = (event: MouseEvent | TouchEvent) => {
-    if (!draggedParticle) return;
-    
-    let clientX, clientY;
-    if ('touches' in event) {
-        clientX = event.touches[0].clientX;
-        clientY = event.touches[0].clientY;
-    } else {
-        clientX = (event as MouseEvent).clientX;
-        clientY = (event as MouseEvent).clientY;
-    }
+function onPointerDown(event: MouseEvent | TouchEvent) {
+  const pos = getClientPos(event);
+  if (!pos) return;
 
-    mouse.x = (clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(clientY / window.innerHeight) * 2 + 1;
-    
-    raycaster.setFromCamera(mouse, camera);
-    const intersectPt = new THREE.Vector3();
-    raycaster.ray.intersectPlane(plane, intersectPt);
-    
-    const targetPos = intersectPt.sub(dragOffset);
-    // Apply a spring force towards target instead of hard setting position for smoother physics
-    const pullForce = targetPos.sub(draggedParticle.position).multiplyScalar(5000);
-    draggedParticle.force.add(pullForce);
-};
+  screenToNDC(pos.x, pos.y);
+  raycaster.setFromCamera(mouse, camera);
 
-const onPointerUp = () => {
-    if (draggedParticle) {
-        draggedParticle.mass = 1;
-        draggedParticle.invMass = 1;
-        draggedParticle = null;
-        controls.enabled = true;
-        document.body.style.cursor = 'auto';
-    }
-};
+  const intersects = raycaster.intersectObject(jellyMesh);
+  if (intersects.length > 0) {
+    const hitPoint = intersects[0].point;
 
-window.addEventListener('mousedown', onPointerDown);
+    // Create a drag plane facing the camera through the hit point
+    const normal = new THREE.Vector3();
+    camera.getWorldDirection(normal);
+    dragPlane.setFromNormalAndCoplanarPoint(normal, hitPoint);
+
+    // Grab radius — larger for more fluid deformation
+    const grabRadius = 2.5;
+    jellyPhysics.startDrag(hitPoint, grabRadius);
+    isDragging = true;
+    document.body.style.cursor = 'grabbing';
+
+    event.preventDefault();
+  }
+}
+
+function onPointerMove(event: MouseEvent | TouchEvent) {
+  if (!isDragging) return;
+
+  const pos = getClientPos(event);
+  if (!pos) return;
+
+  screenToNDC(pos.x, pos.y);
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.ray.intersectPlane(dragPlane, _intersectPt);
+
+  jellyPhysics.updateDrag(_intersectPt);
+  event.preventDefault();
+}
+
+function onPointerUp() {
+  if (isDragging) {
+    jellyPhysics.endDrag();
+    isDragging = false;
+    document.body.style.cursor = 'auto';
+  }
+}
+
+renderer.domElement.addEventListener('mousedown', onPointerDown);
 window.addEventListener('mousemove', onPointerMove);
 window.addEventListener('mouseup', onPointerUp);
 
-window.addEventListener('touchstart', onPointerDown, { passive: false });
-window.addEventListener('touchmove', (e) => {
-    if (draggedParticle) e.preventDefault(); // Prevent scrolling while dragging jelly
-    onPointerMove(e);
-}, { passive: false });
+renderer.domElement.addEventListener('touchstart', onPointerDown, { passive: false });
+window.addEventListener('touchmove', onPointerMove, { passive: false });
 window.addEventListener('touchend', onPointerUp);
 
-// Resize handler
+// ─── UI ──────────────────────────────────────────────────────────────────────
+let uiState: UIState;
+
+function onUIChange(state: UIState) {
+  // Resolution change
+  if (getSegments(state.resolution) !== jellyPhysics.segments) {
+    buildJelly(getSegments(state.resolution));
+
+    // Rebuild debug helpers if active
+    if (state.showBox) {
+      if (boxHelper) scene.remove(boxHelper);
+      boxHelper = buildBoxHelper(jellyPhysics.segments);
+      scene.add(boxHelper);
+    }
+    if (state.showVelocity) {
+      if (velocityHelper) scene.remove(velocityHelper);
+      velocityHelper = buildVelocityHelper();
+      scene.add(velocityHelper);
+    }
+  }
+
+  // Box toggle
+  if (state.showBox && !boxHelper) {
+    boxHelper = buildBoxHelper(jellyPhysics.segments);
+    scene.add(boxHelper);
+  } else if (!state.showBox && boxHelper) {
+    scene.remove(boxHelper);
+    boxHelper = null;
+  }
+
+  // Velocity toggle
+  if (state.showVelocity && !velocityHelper) {
+    velocityHelper = buildVelocityHelper();
+    scene.add(velocityHelper);
+  } else if (!state.showVelocity && velocityHelper) {
+    scene.remove(velocityHelper);
+    velocityHelper = null;
+  }
+
+  uiState = state;
+}
+
+uiState = createUI(onUIChange);
+
+// ─── Resize ──────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Animation loop
+// ─── Init ────────────────────────────────────────────────────────────────────
+buildJelly(getSegments(uiState.resolution));
+
+// ─── Animation Loop ──────────────────────────────────────────────────────────
 const clock = new THREE.Clock();
-let timeAccumulator = 0;
-const physicsTimeStep = 1 / 120; // 120Hz physics
+let accumulator = 0;
+const physicsDt = 1 / 120;
 
 function animate() {
-    requestAnimationFrame(animate);
-    
-    const dt = Math.min(clock.getDelta(), 0.1);
-    timeAccumulator += dt;
-    
-    // Fixed time step for physics stability
-    while (timeAccumulator >= physicsTimeStep) {
-        jellyPhysics.update(physicsTimeStep);
-        timeAccumulator -= physicsTimeStep;
-    }
-    
-    // Update geometry
-    const positions = jellyGeo.attributes.position;
-    for (let i = 0; i < positions.count; i++) {
-        const pIdx = vertexParticleMapping[i];
-        const p = jellyPhysics.particles[pIdx];
-        positions.setXYZ(i, p.position.x, p.position.y, p.position.z);
-    }
-    positions.needsUpdate = true;
-    jellyGeo.computeVertexNormals(); // Recompute normals for proper lighting on deformed shape
-    
-    controls.update();
-    renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+
+  const frameDt = Math.min(clock.getDelta(), 0.05);
+  accumulator += frameDt;
+
+  // Fixed timestep physics
+  while (accumulator >= physicsDt) {
+    jellyPhysics.update(physicsDt);
+    accumulator -= physicsDt;
+  }
+
+  // Update mesh vertices from physics
+  const posAttr = jellyGeo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < posAttr.count; i++) {
+    const p = jellyPhysics.particles[vertexParticleMapping[i]];
+    posAttr.setXYZ(i, p.position.x, p.position.y, p.position.z);
+  }
+  posAttr.needsUpdate = true;
+  jellyGeo.computeVertexNormals();
+  jellyGeo.computeBoundingSphere();
+
+  // Update debug helpers
+  if (uiState.showBox && boxHelper) updateBoxHelper();
+  if (uiState.showVelocity && velocityHelper) updateVelocityHelper();
+
+  renderer.render(scene, camera);
 }
 
 animate();

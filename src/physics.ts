@@ -3,18 +3,20 @@ import * as THREE from 'three';
 export class Particle {
   mass: number;
   position: THREE.Vector3;
+  prevPosition: THREE.Vector3;
   velocity: THREE.Vector3;
   force: THREE.Vector3;
   invMass: number;
-  isFixed: boolean;
+  restPosition: THREE.Vector3;
 
   constructor(x: number, y: number, z: number, mass: number = 1.0) {
     this.mass = mass;
     this.invMass = mass > 0 ? 1.0 / mass : 0;
     this.position = new THREE.Vector3(x, y, z);
+    this.prevPosition = new THREE.Vector3(x, y, z);
     this.velocity = new THREE.Vector3(0, 0, 0);
     this.force = new THREE.Vector3(0, 0, 0);
-    this.isFixed = false;
+    this.restPosition = new THREE.Vector3(x, y, z);
   }
 }
 
@@ -33,124 +35,135 @@ export class Spring {
     this.damping = damping;
   }
 
-  update() {
-    const diff = new THREE.Vector3().subVectors(this.p2.position, this.p1.position);
-    const dist = diff.length();
-    if (dist === 0) return;
+  applyForce() {
+    const dx = this.p2.position.x - this.p1.position.x;
+    const dy = this.p2.position.y - this.p1.position.y;
+    const dz = this.p2.position.z - this.p1.position.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist < 1e-8) return;
 
-    // Hooke's Law: F = -k * (x - L)
     const stretch = dist - this.restLength;
     const forceMag = this.stiffness * stretch;
-    
-    // Normalize diff
-    const dir = diff.clone().divideScalar(dist);
-    
-    const force = dir.clone().multiplyScalar(forceMag);
-    
-    // Damping: Fd = -c * v_rel
-    const relVel = new THREE.Vector3().subVectors(this.p2.velocity, this.p1.velocity);
-    const dampForceMag = relVel.dot(dir) * this.damping;
-    const dampForce = dir.clone().multiplyScalar(dampForceMag);
-    
-    force.add(dampForce);
 
-    if (!this.p1.isFixed) this.p1.force.add(force);
-    if (!this.p2.isFixed) this.p2.force.sub(force);
+    const invDist = 1.0 / dist;
+    const dirX = dx * invDist;
+    const dirY = dy * invDist;
+    const dirZ = dz * invDist;
+
+    // Damping along spring axis
+    const rvx = this.p2.velocity.x - this.p1.velocity.x;
+    const rvy = this.p2.velocity.y - this.p1.velocity.y;
+    const rvz = this.p2.velocity.z - this.p1.velocity.z;
+    const dampF = (rvx * dirX + rvy * dirY + rvz * dirZ) * this.damping;
+
+    const fx = dirX * (forceMag + dampF);
+    const fy = dirY * (forceMag + dampF);
+    const fz = dirZ * (forceMag + dampF);
+
+    this.p1.force.x += fx;
+    this.p1.force.y += fy;
+    this.p1.force.z += fz;
+
+    this.p2.force.x -= fx;
+    this.p2.force.y -= fy;
+    this.p2.force.z -= fz;
   }
+}
+
+export interface DragInfo {
+  particleIndex: number;
+  weight: number;
+  offset: THREE.Vector3; // offset from drag center at time of grab
 }
 
 export class JellyPhysics {
   particles: Particle[] = [];
   springs: Spring[] = [];
-  gravity: THREE.Vector3 = new THREE.Vector3(0, -9.81 * 2, 0); // extra gravity for snap
-  bounds = { floor: 0 };
-  dragFriction = 0.99;
-  
-  size: number;
+  gravity: THREE.Vector3 = new THREE.Vector3(0, -20, 0);
+  floorY = 0;
+  globalDamping = 0.998;
   segments: number;
-  stiffness: number;
-  damping: number;
-  
-  constructor(
-    size: number, 
-    segments: number, 
-    stiffness: number, 
-    damping: number
-  ) {
-    this.size = size;
+  substepsPerUpdate: number;
+
+  // Drag state
+  dragTarget: THREE.Vector3 = new THREE.Vector3();
+  dragParticles: DragInfo[] = [];
+  isDragging = false;
+
+  constructor(segments: number) {
     this.segments = segments;
-    this.stiffness = stiffness;
-    this.damping = damping;
-    this.init();
+    // More substeps for higher resolution to maintain stability
+    this.substepsPerUpdate = segments <= 3 ? 1 : segments <= 5 ? 2 : segments <= 8 ? 4 : 8;
+    this.init(segments);
   }
 
-  init() {
+  init(segments: number) {
+    this.segments = segments;
     this.particles = [];
     this.springs = [];
-    
-    const n = this.segments + 1;
-    const step = this.size / this.segments;
-    const offset = this.size / 2;
+
+    const n = segments + 1;
+    const halfSize = 2.0;
+    const step = (halfSize * 2) / segments;
 
     // Create particles
-    for (let z = 0; z < n; z++) {
-      for (let y = 0; y < n; y++) {
-        for (let x = 0; x < n; x++) {
-          const px = x * step - offset;
-          const py = y * step - offset + this.size; // start above floor
-          const pz = z * step - offset;
+    for (let iz = 0; iz < n; iz++) {
+      for (let iy = 0; iy < n; iy++) {
+        for (let ix = 0; ix < n; ix++) {
+          const px = ix * step - halfSize;
+          const py = iy * step + 0.5; // bottom of cube at y=0.5 (just above floor)
+          const pz = iz * step - halfSize;
           this.particles.push(new Particle(px, py, pz, 1.0));
         }
       }
     }
 
-    const getIndex = (x: number, y: number, z: number) => z * n * n + y * n + x;
+    // Index helper
+    const idx = (x: number, y: number, z: number) => z * n * n + y * n + x;
 
-    // Create springs
-    for (let z = 0; z < n; z++) {
-      for (let y = 0; y < n; y++) {
-        for (let x = 0; x < n; x++) {
-          const idx = getIndex(x, y, z);
-          const p1 = this.particles[idx];
+    // Spring stiffness: use a moderate base that works at all resolutions
+    // The key insight: spring restLength is proportional to 1/segments,
+    // so forces are naturally proportional. We just need moderate stiffness.
+    const stiffness = 300;
+    const damping = 5;
 
-          // Structural & Shear springs: connect to neighbors within a 3x3x3 block
-          for (let dz = 0; dz <= 1; dz++) {
+    // Create springs — structural, shear, and bend
+    for (let iz = 0; iz < n; iz++) {
+      for (let iy = 0; iy < n; iy++) {
+        for (let ix = 0; ix < n; ix++) {
+          const p1 = this.particles[idx(ix, iy, iz)];
+
+          // Structural + Shear (26 neighbors)
+          for (let dz = -1; dz <= 1; dz++) {
             for (let dy = -1; dy <= 1; dy++) {
               for (let dx = -1; dx <= 1; dx++) {
-                // Avoid backward connections and self
-                if (dz === 0 && dy === 0 && dx <= 0) continue;
-                if (dz === 0 && dy === -1) continue;
+                if (dx === 0 && dy === 0 && dz === 0) continue;
+                if (dz < 0) continue;
+                if (dz === 0 && dy < 0) continue;
+                if (dz === 0 && dy === 0 && dx < 0) continue;
 
-                const nx = x + dx;
-                const ny = y + dy;
-                const nz = z + dz;
+                const nx = ix + dx;
+                const ny = iy + dy;
+                const nz = iz + dz;
 
                 if (nx >= 0 && nx < n && ny >= 0 && ny < n && nz >= 0 && nz < n) {
-                  const nidx = getIndex(nx, ny, nz);
-                  const p2 = this.particles[nidx];
-                  
-                  // Adjust stiffness based on distance (diagonal vs straight)
-                  const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                  const s = this.stiffness / dist;
-                  
-                  this.springs.push(new Spring(p1, p2, s, this.damping));
+                  const p2 = this.particles[idx(nx, ny, nz)];
+                  const diagDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                  // Diagonal springs are weaker proportionally
+                  this.springs.push(new Spring(p1, p2, stiffness / diagDist, damping));
                 }
               }
             }
           }
-          
-          // Bend springs (skip 1 node)
-          const bendOffsets = [
-            [2, 0, 0], [0, 2, 0], [0, 0, 2]
-          ];
-          for (const [dx, dy, dz] of bendOffsets) {
-            const nx = x + dx;
-            const ny = y + dy;
-            const nz = z + dz;
+
+          // Bend springs (skip 1 node for resistance to bending)
+          for (const [dx, dy, dz] of [[2,0,0],[0,2,0],[0,0,2]]) {
+            const nx = ix + dx;
+            const ny = iy + dy;
+            const nz = iz + dz;
             if (nx < n && ny < n && nz < n) {
-              const nidx = getIndex(nx, ny, nz);
-              const p2 = this.particles[nidx];
-              this.springs.push(new Spring(p1, p2, this.stiffness * 0.5, this.damping));
+              const p2 = this.particles[idx(nx, ny, nz)];
+              this.springs.push(new Spring(p1, p2, stiffness * 0.3, damping * 0.5));
             }
           }
         }
@@ -158,39 +171,124 @@ export class JellyPhysics {
     }
   }
 
-  update(dt: number) {
-    // Accumulate forces
-    for (const p of this.particles) {
-      if (p.isFixed) continue;
-      p.force.set(0, 0, 0);
-      p.force.add(this.gravity.clone().multiplyScalar(p.mass));
-    }
+  startDrag(hitPoint: THREE.Vector3, radius: number) {
+    this.dragParticles = [];
+    this.isDragging = true;
+    this.dragTarget.copy(hitPoint);
 
-    for (const s of this.springs) {
-      s.update();
-    }
-
-    // Integrate (Semi-implicit Euler)
-    for (const p of this.particles) {
-      if (p.isFixed) continue;
-      
-      const acc = p.force.clone().multiplyScalar(p.invMass);
-      p.velocity.add(acc.multiplyScalar(dt));
-      p.velocity.multiplyScalar(this.dragFriction); // Global damping
-      
-      const newPos = p.position.clone().add(p.velocity.clone().multiplyScalar(dt));
-      
-      // Floor collision
-      if (newPos.y < this.bounds.floor) {
-        newPos.y = this.bounds.floor;
-        // Friction on floor
-        p.velocity.x *= 0.5;
-        p.velocity.z *= 0.5;
-        // Bounce
-        p.velocity.y *= -0.2; 
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      const dist = p.position.distanceTo(hitPoint);
+      if (dist < radius) {
+        const t = dist / radius;
+        // Smooth falloff: cubic hermite
+        const weight = 1.0 - t * t * (3 - 2 * t);
+        this.dragParticles.push({
+          particleIndex: i,
+          weight,
+          offset: new THREE.Vector3().subVectors(p.position, hitPoint),
+        });
       }
-      
-      p.position.copy(newPos);
+    }
+
+    // Fallback: grab closest
+    if (this.dragParticles.length === 0) {
+      let minDist = Infinity;
+      let closestIdx = 0;
+      for (let i = 0; i < this.particles.length; i++) {
+        const d = this.particles[i].position.distanceTo(hitPoint);
+        if (d < minDist) {
+          minDist = d;
+          closestIdx = i;
+        }
+      }
+      this.dragParticles.push({
+        particleIndex: closestIdx,
+        weight: 1.0,
+        offset: new THREE.Vector3().subVectors(this.particles[closestIdx].position, hitPoint),
+      });
+    }
+  }
+
+  updateDrag(target: THREE.Vector3) {
+    this.dragTarget.copy(target);
+  }
+
+  endDrag() {
+    this.isDragging = false;
+    this.dragParticles = [];
+  }
+
+  update(dt: number) {
+    // Subdivide the timestep for stability at high resolutions
+    const subDt = dt / this.substepsPerUpdate;
+
+    for (let sub = 0; sub < this.substepsPerUpdate; sub++) {
+      this._substep(subDt);
+    }
+  }
+
+  private _substep(dt: number) {
+    // Reset forces, apply gravity
+    for (const p of this.particles) {
+      p.force.x = this.gravity.x * p.mass;
+      p.force.y = this.gravity.y * p.mass;
+      p.force.z = this.gravity.z * p.mass;
+    }
+
+    // Spring forces
+    for (const s of this.springs) {
+      s.applyForce();
+    }
+
+    // Drag: position-based — directly move grabbed particles toward target
+    if (this.isDragging) {
+      for (const info of this.dragParticles) {
+        const p = this.particles[info.particleIndex];
+
+        // Target position for this particle = dragTarget + original offset * (1-weight)
+        // Highest weight particles go exactly to target, lower weight ones keep some offset
+        const lerpW = info.weight;
+        const targetX = this.dragTarget.x + info.offset.x * (1 - lerpW);
+        const targetY = this.dragTarget.y + info.offset.y * (1 - lerpW);
+        const targetZ = this.dragTarget.z + info.offset.z * (1 - lerpW);
+
+        // Very strong spring toward target position
+        const strength = 500 * info.weight;
+        p.force.x += (targetX - p.position.x) * strength;
+        p.force.y += (targetY - p.position.y) * strength;
+        p.force.z += (targetZ - p.position.z) * strength;
+
+        // Heavy damping on dragged particles
+        p.velocity.x *= 0.85;
+        p.velocity.y *= 0.85;
+        p.velocity.z *= 0.85;
+      }
+    }
+
+    // Semi-implicit Euler integration
+    for (const p of this.particles) {
+      const ax = p.force.x * p.invMass;
+      const ay = p.force.y * p.invMass;
+      const az = p.force.z * p.invMass;
+
+      p.velocity.x = (p.velocity.x + ax * dt) * this.globalDamping;
+      p.velocity.y = (p.velocity.y + ay * dt) * this.globalDamping;
+      p.velocity.z = (p.velocity.z + az * dt) * this.globalDamping;
+
+      p.prevPosition.copy(p.position);
+
+      p.position.x += p.velocity.x * dt;
+      p.position.y += p.velocity.y * dt;
+      p.position.z += p.velocity.z * dt;
+
+      // Floor collision
+      if (p.position.y < this.floorY) {
+        p.position.y = this.floorY;
+        p.velocity.x *= 0.7;
+        p.velocity.z *= 0.7;
+        if (p.velocity.y < 0) p.velocity.y *= -0.3;
+      }
     }
   }
 }
