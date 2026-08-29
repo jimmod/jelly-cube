@@ -360,11 +360,18 @@ function updateBounds() {
   const bottomRight = new THREE.Vector3();
   boundsRaycaster.ray.intersectPlane(zPlane, bottomRight);
   
-  // Match shadow floor to the visible screen bottom
-  floor.position.y = bottomRight.y;
+  // The user wants a gap between the cube's resting place and the bottom of the screen.
+  // We'll set the floor boundary to be half the cube size above the screen's bottom edge.
+  // (Assuming cubeSize is approximately 3.0, gap is 1.5)
+
+  const cubeSize = uiState.cubeSize;
+  const floorY = bottomRight.y + (cubeSize / 2);
+  
+  // Match shadow floor to the padded bottom
+  floor.position.y = floorY;
   
   for (const cube of cubes) {
-    cube.physics.setBounds(topLeft.x, bottomRight.x, bottomRight.y, topLeft.y);
+    cube.physics.setBounds(topLeft.x, bottomRight.x, floorY, topLeft.y);
   }
 }
 
