@@ -71,7 +71,6 @@ const normalShader = {
     }
   `,
   fragmentShader: `
-    #extension GL_OES_standard_derivatives : enable
     uniform sampler2D tDiffuse;
     uniform int hasTexture;
     uniform int textureMode;
