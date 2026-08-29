@@ -7,7 +7,9 @@ export interface UIState {
   cubeCount: number;
   cubeSize: number; // 0.5 to 5.0, default 3.0
   elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 1.0
+  damping: number; // 0.1 to 5.0, default 1.0
   gravity: number; // 0 (float) to 10 (fast fall), default 5
+  tiltGravity: boolean;
   textureUrl: string | null;
   soundEnabled: boolean;
   showBox: boolean;
@@ -33,7 +35,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
     cubeCount: 1,
     cubeSize: 3.0,
     elasticity: 1.0,
+    damping: 1.0,
     gravity: 5,
+    tiltGravity: false,
     textureUrl: null,
     soundEnabled: false,
     showBox: false,
@@ -92,26 +96,62 @@ export function createUI(onChange: UIChangeCallback): UIState {
   const elastGroup = createGroup('');
   const elastLabel = document.createElement('label');
   elastLabel.className = 'control-label';
-  elastLabel.innerHTML = 'Elasticity <span class="slider-value" id="elast-value">1.0×</span>';
+  elastLabel.innerHTML = 'Elasticity <span class="slider-value" id="bounce-value">1.0×</span>';
   // Replace the auto-generated label
   elastGroup.replaceChildren(elastLabel);
 
-  const elastSlider = document.createElement('input');
-  elastSlider.type = 'range';
-  elastSlider.id = 'elast-slider';
-  elastSlider.min = '0.1';
-  elastSlider.max = '3.0';
-  elastSlider.step = '0.1';
-  elastSlider.value = String(state.elasticity);
-  elastSlider.addEventListener('input', () => {
-    const val = parseFloat(elastSlider.value);
+  const bounceSlider = document.createElement('input');
+  bounceSlider.type = 'range';
+  bounceSlider.id = 'bounce-slider';
+  bounceSlider.min = '0.1';
+  bounceSlider.max = '3.0';
+  bounceSlider.step = '0.1';
+  bounceSlider.value = String(state.elasticity);
+  bounceSlider.addEventListener('input', () => {
+    const val = parseFloat(bounceSlider.value);
     state.elasticity = val;
-    const valueEl = document.getElementById('elast-value');
-    if (valueEl) valueEl.textContent = `${val.toFixed(1)}×`;
+    const valueEl = document.getElementById('bounce-value');
+    if (valueEl) valueEl.textContent = `${val.toFixed(1)}`;
     onChange({ ...state });
   });
-  elastGroup.appendChild(elastSlider);
+  elastGroup.appendChild(bounceSlider);
   body.appendChild(elastGroup);
+
+  // ── Material Presets ────────────────────────────────────────────
+  const presetsGroup = createGroup('Presets');
+  const presetsContainer = document.createElement('div');
+  presetsContainer.style.display = 'flex';
+  presetsContainer.style.gap = '8px';
+  presetsContainer.style.marginTop = '4px';
+
+  const createPresetBtn = (label: string, elasticity: number, damping: number) => {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.style.flex = '1';
+    btn.style.padding = '4px';
+    btn.style.fontSize = '12px';
+    btn.style.cursor = 'pointer';
+    btn.style.background = 'rgba(255, 255, 255, 0.1)';
+    btn.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    btn.style.color = '#fff';
+    btn.style.borderRadius = '4px';
+    btn.addEventListener('click', () => {
+      state.elasticity = elasticity;
+      state.damping = damping;
+      bounceSlider.value = String(elasticity);
+      const bounceValEl = document.getElementById('bounce-value');
+      if (bounceValEl) bounceValEl.textContent = elasticity.toFixed(1);
+      onChange({ ...state });
+    });
+    return btn;
+  };
+
+  presetsContainer.appendChild(createPresetBtn('💧 Water', 0.5, 0.5));
+  presetsContainer.appendChild(createPresetBtn('🍯 Slime', 0.2, 3.0));
+  presetsContainer.appendChild(createPresetBtn('🍮 Jello', 2.0, 1.0));
+  
+  presetsGroup.appendChild(presetsContainer);
+  body.appendChild(presetsGroup);
 
   // ── Gravity slider ──────────────────────────────────────────────
   const gravGroup = createGroup('');
@@ -136,6 +176,28 @@ export function createUI(onChange: UIChangeCallback): UIState {
   });
   gravGroup.appendChild(gravSlider);
   body.appendChild(gravGroup);
+
+  // ── Tilt Gravity Toggle ─────────────────────────────────────────
+  const tiltToggle = createToggle('📱 Tilt Gravity', state.tiltGravity, (val) => {
+    // Request permission on iOS
+    if (val && typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      (DeviceOrientationEvent as any).requestPermission()
+        .then((permissionState: string) => {
+          if (permissionState === 'granted') {
+            state.tiltGravity = true;
+            onChange({ ...state });
+          } else {
+            // Revert UI if denied
+            tiltToggle.querySelector('input')!.checked = false;
+          }
+        })
+        .catch(console.error);
+    } else {
+      state.tiltGravity = val;
+      onChange({ ...state });
+    }
+  });
+  body.appendChild(tiltToggle);
 
   // ── Size slider ─────────────────────────────────────────────────
   const sizeGroup = createGroup('');

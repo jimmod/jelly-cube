@@ -442,7 +442,6 @@ function onUIChange(state: UIState) {
   const countChanged = state.cubeCount !== cubes.length;
   const sizeChanged = state.cubeSize !== currentCubeSize;
 
-
   if (segmentsChanged || countChanged || sizeChanged) {
     currentCubeSize = state.cubeSize;
     // Only ever build 1 cube now as multiple cubes have no collisions
@@ -496,11 +495,14 @@ function onUIChange(state: UIState) {
     }
   }
 
-  // Update elasticity & gravity
+  // Update elasticity, damping, & gravity
   for (const cube of cubes) {
     cube.physics.stiffnessMultiplier = state.elasticity;
+    cube.physics.dampingMultiplier = state.damping;
     // Map 0 -> 0, 5 -> -20, 10 -> -40
-    cube.physics.gravity.y = - (state.gravity * 4);
+    if (!state.tiltGravity) {
+      cube.physics.gravity.set(0, - (state.gravity * 4), 0);
+    }
   }
 
   // Box toggle
@@ -530,7 +532,7 @@ function onUIChange(state: UIState) {
 
 uiState = createUI(onUIChange);
 
-// ─── Resize ──────────────────────────────────────────────────────────────────
+// ─── Resize & Device Orientation ─────────────────────────────────────────────
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -538,6 +540,29 @@ window.addEventListener('resize', () => {
   
   // Update physics bounds and potentially rebuild if size changes drastically
   updateBounds();
+});
+
+window.addEventListener('deviceorientation', (event) => {
+  if (!uiState || !uiState.tiltGravity) return;
+  
+  // event.beta (front-to-back in degrees, -180 to 180) -> Y gravity
+  // event.gamma (left-to-right in degrees, -90 to 90) -> X gravity
+  let beta = event.beta || 0;
+  let gamma = event.gamma || 0;
+  
+  // clamp sensible angles
+  beta = Math.max(-90, Math.min(90, beta));
+  gamma = Math.max(-90, Math.min(90, gamma));
+
+  // Map 90 degrees to max gravity (e.g. 40)
+  const gravX = (gamma / 90) * 40;
+  // Beta is usually 45-90 when holding phone naturally. Let's make 45 degrees the "neutral" y=0.
+  // Actually, standard is 0 = flat on table.
+  const gravY = -(beta / 90) * 40; 
+  
+  for (const cube of cubes) {
+    cube.physics.gravity.set(gravX, gravY, 0);
+  }
 });
 
 // ─── Init ────────────────────────────────────────────────────────────────────

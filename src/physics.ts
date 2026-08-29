@@ -36,7 +36,7 @@ export class Spring {
     this.damping = damping;
   }
 
-  applyForce() {
+  applyForce(stiffnessMultiplier = 1.0, dampingMultiplier = 1.0) {
     const dx = this.p2.position.x - this.p1.position.x;
     const dy = this.p2.position.y - this.p1.position.y;
     const dz = this.p2.position.z - this.p1.position.z;
@@ -44,7 +44,7 @@ export class Spring {
     if (dist < 1e-8) return;
 
     const stretch = dist - this.restLength;
-    const forceMag = this.stiffness * stretch;
+    const forceMag = (this.stiffness * stiffnessMultiplier) * stretch;
 
     const invDist = 1.0 / dist;
     const dirX = dx * invDist;
@@ -55,7 +55,7 @@ export class Spring {
     const rvx = this.p2.velocity.x - this.p1.velocity.x;
     const rvy = this.p2.velocity.y - this.p1.velocity.y;
     const rvz = this.p2.velocity.z - this.p1.velocity.z;
-    const dampF = (rvx * dirX + rvy * dirY + rvz * dirZ) * this.damping;
+    const dampF = (rvx * dirX + rvy * dirY + rvz * dirZ) * (this.damping * dampingMultiplier);
 
     const fx = dirX * (forceMag + dampF);
     const fy = dirY * (forceMag + dampF);
@@ -86,6 +86,7 @@ export class JellyPhysics {
   segments: number;
   substepsPerUpdate: number;
   stiffnessMultiplier = 1.0; // Elasticity: scales all spring stiffness at runtime
+  dampingMultiplier = 1.0; // Viscosity/bounciness: scales spring damping at runtime
 
   // Drag state - support multiple touches via Pointer Events
   activeDrags: Map<number, { target: THREE.Vector3, particles: DragInfo[] }> = new Map();
@@ -269,7 +270,7 @@ export class JellyPhysics {
       const rvx = s.p2.velocity.x - s.p1.velocity.x;
       const rvy = s.p2.velocity.y - s.p1.velocity.y;
       const rvz = s.p2.velocity.z - s.p1.velocity.z;
-      const dampF = (rvx * dirX + rvy * dirY + rvz * dirZ) * s.damping;
+      const dampF = (rvx * dirX + rvy * dirY + rvz * dirZ) * (s.damping * this.dampingMultiplier);
 
       const fx = dirX * (forceMag + dampF);
       const fy = dirY * (forceMag + dampF);
