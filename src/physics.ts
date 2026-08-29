@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { playBounceSound } from './audio';
 
 export class Particle {
   mass: number;
@@ -345,14 +346,20 @@ export class JellyPhysics {
       // Floor (minY)
       if (p.position.y < this.bounds.minY) {
         p.position.y = this.bounds.minY;
-        if (p.velocity.y < 0) p.velocity.y *= -restitution;
+        if (p.velocity.y < 0) {
+          if (p.velocity.y < -2) playBounceSound(-p.velocity.y);
+          p.velocity.y *= -restitution;
+        }
         p.velocity.x *= friction;
         p.velocity.z *= friction;
       }
       // Ceiling (maxY)
       else if (p.position.y > this.bounds.maxY) {
         p.position.y = this.bounds.maxY;
-        if (p.velocity.y > 0) p.velocity.y *= -restitution;
+        if (p.velocity.y > 0) {
+          if (p.velocity.y > 2) playBounceSound(p.velocity.y);
+          p.velocity.y *= -restitution;
+        }
         p.velocity.x *= friction;
         p.velocity.z *= friction;
       }
@@ -360,14 +367,20 @@ export class JellyPhysics {
       // Left Wall (minX)
       if (p.position.x < this.bounds.minX) {
         p.position.x = this.bounds.minX;
-        if (p.velocity.x < 0) p.velocity.x *= -restitution;
+        if (p.velocity.x < 0) {
+          if (p.velocity.x < -2) playBounceSound(-p.velocity.x);
+          p.velocity.x *= -restitution;
+        }
         p.velocity.y *= friction;
         p.velocity.z *= friction;
       }
       // Right Wall (maxX)
       else if (p.position.x > this.bounds.maxX) {
         p.position.x = this.bounds.maxX;
-        if (p.velocity.x > 0) p.velocity.x *= -restitution;
+        if (p.velocity.x > 0) {
+          if (p.velocity.x > 2) playBounceSound(p.velocity.x);
+          p.velocity.x *= -restitution;
+        }
         p.velocity.y *= friction;
         p.velocity.z *= friction;
       }

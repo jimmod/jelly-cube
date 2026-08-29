@@ -1,11 +1,14 @@
 export type Resolution = 'low' | 'medium' | 'high' | 'super';
 
+import { setSoundEnabled } from './audio';
+
 export interface UIState {
   resolution: Resolution;
   cubeCount: number;
   cubeSize: number; // 0.5 to 5.0, default 3.0
   elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 1.0
   gravity: number; // 0 (float) to 10 (fast fall), default 5
+  soundEnabled: boolean;
   showBox: boolean;
   showVelocity: boolean;
 }
@@ -30,6 +33,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
     cubeSize: 3.0,
     elasticity: 1.0,
     gravity: 5,
+    soundEnabled: false,
     showBox: false,
     showVelocity: false,
   };
@@ -161,6 +165,14 @@ export function createUI(onChange: UIChangeCallback): UIState {
   });
   sizeGroup.appendChild(sizeSlider);
   body.appendChild(sizeGroup);
+
+  // ── Sound Toggle ────────────────────────────────────────────────
+  const soundToggle = createToggle('Sound', state.soundEnabled, (val) => {
+    state.soundEnabled = val;
+    setSoundEnabled(val);
+    onChange({ ...state });
+  });
+  body.appendChild(soundToggle);
 
   // ── Separator ───────────────────────────────────────────────────
   const sep = document.createElement('div');

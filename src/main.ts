@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { JellyPhysics } from './physics';
 import { createUI, getSegments } from './ui';
 import type { UIState } from './ui';
+import { playPressSound } from './audio';
 import './style.css';
 
 // ─── Scene ───────────────────────────────────────────────────────────────────
@@ -375,6 +376,7 @@ function onPointerDown(event: PointerEvent) {
 
     const grabRadius = 2.5;
     hitCube.physics.startDrag(event.pointerId, hitPoint, grabRadius);
+    playPressSound();
     
     activePointers.set(event.pointerId, { cube: hitCube, plane });
     document.body.style.cursor = 'grabbing';
