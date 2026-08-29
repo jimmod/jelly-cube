@@ -87,8 +87,12 @@ export class JellyPhysics {
   globalDamping = 0.998;
   segments: number;
   substepsPerUpdate: number;
-  stiffnessMultiplier = 1.0; // Elasticity: scales all spring stiffness at runtime
-  dampingMultiplier = 1.0; // Viscosity/bounciness: scales spring damping at runtime
+  stiffnessMultiplier = 1.0; // Elasticity: set by UI
+  dampingMultiplier = 1.0; // Viscosity/bounciness: set by UI
+  
+  // Internal multipliers to keep high resolutions stable at low substeps
+  private baseStiffnessScale = 1.0;
+  private baseDampingScale = 1.0;
 
   // Drag state - support multiple touches via Pointer Events
   activeDrags: Map<number, { target: THREE.Vector3, particles: DragInfo[] }> = new Map();
@@ -106,9 +110,8 @@ export class JellyPhysics {
     // We must aggressively scale down the stiffness for High/Super to keep it stable.
     if (segments >= 8) {
       // For segments=8 (High) and segments=12 (Super)
-      const scale = segments === 12 ? 0.25 : 0.6; 
-      this.stiffnessMultiplier *= scale;
-      this.dampingMultiplier *= (segments === 12 ? 3.0 : 1.5);
+      this.baseStiffnessScale = segments === 12 ? 0.15 : 0.5; // Aggressive scale down
+      this.baseDampingScale = segments === 12 ? 4.0 : 2.0;
     }
     this.init(segments, size);
   }
@@ -247,10 +250,17 @@ export class JellyPhysics {
   }
 
   update(dt: number) {
-    // Subdivide the timestep for stability at high resolutions
-    const subDt = dt / this.substepsPerUpdate;
+    // Dynamically increase substeps if the jelly is very stiff (like the Jello preset)
+    // to prevent numerical oscillation at high resolutions.
+    let currentSubsteps = this.substepsPerUpdate;
+    if (this.segments >= 8 && this.stiffnessMultiplier > 1.2) {
+      currentSubsteps = this.segments === 12 ? 8 : 6;
+    }
 
-    for (let sub = 0; sub < this.substepsPerUpdate; sub++) {
+    // Subdivide the timestep for stability at high resolutions
+    const subDt = dt / currentSubsteps;
+
+    for (let sub = 0; sub < currentSubsteps; sub++) {
       this._substep(subDt);
     }
   }
@@ -272,7 +282,7 @@ export class JellyPhysics {
       if (dist < 1e-8) continue;
 
       const stretch = dist - s.restLength;
-      const forceMag = s.stiffness * this.stiffnessMultiplier * stretch;
+      const forceMag = s.stiffness * (this.stiffnessMultiplier * this.baseStiffnessScale) * stretch;
 
       const invDist = 1.0 / dist;
       const dirX = dx * invDist;
@@ -282,7 +292,7 @@ export class JellyPhysics {
       const rvx = s.p2.velocity.x - s.p1.velocity.x;
       const rvy = s.p2.velocity.y - s.p1.velocity.y;
       const rvz = s.p2.velocity.z - s.p1.velocity.z;
-      const dampF = (rvx * dirX + rvy * dirY + rvz * dirZ) * (s.damping * this.dampingMultiplier);
+      const dampF = (rvx * dirX + rvy * dirY + rvz * dirZ) * (s.damping * this.dampingMultiplier * this.baseDampingScale);
 
       const fx = dirX * (forceMag + dampF);
       const fy = dirY * (forceMag + dampF);
