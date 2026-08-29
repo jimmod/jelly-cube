@@ -147,8 +147,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
   };
 
   presetsContainer.appendChild(createPresetBtn('💧 Water', 0.5, 0.5));
-  presetsContainer.appendChild(createPresetBtn('🍯 Slime', 0.2, 3.0));
+  presetsContainer.appendChild(createPresetBtn('🍯 Slime', 0.3, 1.0)); // Soft, stretches a lot, but can still move
   presetsContainer.appendChild(createPresetBtn('🍮 Jello', 2.0, 1.0));
+  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.2, 3.0)); // High damping makes it feel heavy/unmovable
   
   presetsGroup.appendChild(presetsContainer);
   body.appendChild(presetsGroup);
