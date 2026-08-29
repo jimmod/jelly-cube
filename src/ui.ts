@@ -1,4 +1,4 @@
-export type Resolution = 'low' | 'medium' | 'high' | 'super';
+export type Resolution = 'low' | 'medium' | 'high';
 
 import { setSoundEnabled } from './audio';
 
@@ -24,7 +24,6 @@ const RESOLUTION_MAP: Record<Resolution, { label: string; segments: number }> = 
   low:    { label: 'Low (3×3×3)',    segments: 3 },
   medium: { label: 'Medium (5×5×5)', segments: 5 },
   high:   { label: 'High (8×8×8)',   segments: 8 },
-  super:  { label: 'Super (12×12×12)', segments: 12 },
 };
 
 export function getSegments(res: Resolution): number {
