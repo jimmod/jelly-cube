@@ -98,8 +98,12 @@ export class JellyPhysics {
 
   constructor(segments: number, size: number) {
     this.segments = segments;
-    // Calculate appropriate substepping for stability
-    this.substepsPerUpdate = segments <= 3 ? 1 : segments <= 5 ? 2 : segments <= 8 ? 4 : 8;
+    // Cap substeps at 4 for massive performance boost on mobile at High/Super resolutions
+    this.substepsPerUpdate = segments <= 3 ? 1 : segments <= 5 ? 2 : 4;
+    // Add a bit of structural damping at very high resolutions to keep it stable with fewer substeps
+    if (segments > 8) {
+      this.dampingMultiplier *= 1.2;
+    }
     this.init(segments, size);
   }
 

@@ -62,28 +62,30 @@ const normalShader = {
     uColor: { value: new THREE.Color() }
   },
   vertexShader: `
-    varying vec3 vNormal;
     varying vec3 vWorldPos;
     varying vec2 vUv;
     void main() {
       vUv = uv;
-      vNormal = normalize(normalMatrix * normal);
       vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
   fragmentShader: `
+    #extension GL_OES_standard_derivatives : enable
     uniform sampler2D tDiffuse;
     uniform int hasTexture;
     uniform int textureMode;
     uniform vec3 uColor;
     
-    varying vec3 vNormal;
     varying vec3 vWorldPos;
     varying vec2 vUv;
 
     void main() {
-      vec3 n = normalize(vNormal);
+      // Compute flat face normal via derivatives (GPU hardware)
+      vec3 fdx = dFdx(vWorldPos);
+      vec3 fdy = dFdy(vWorldPos);
+      vec3 n = normalize(cross(fdx, fdy));
+      
       vec3 baseColor;
       
       if (textureMode == 3 && hasTexture == 1) {
@@ -152,7 +154,7 @@ function createJellyCube(segments: number, size: number, offsetX: number): Jelly
     uniforms: THREE.UniformsUtils.clone(normalShader.uniforms),
     vertexShader: normalShader.vertexShader,
     fragmentShader: normalShader.fragmentShader,
-    side: THREE.DoubleSide,
+    side: THREE.DoubleSide
   });
 
   const mesh = new THREE.Mesh(geo, mat);
@@ -634,12 +636,18 @@ function animate() {
   // Update mesh vertices from physics for all cubes
   for (const cube of cubes) {
     const posAttr = cube.geo.attributes.position as THREE.BufferAttribute;
+    const array = posAttr.array as Float32Array;
+    const mapping = cube.vertexParticleMapping;
+    
+    // Fast flat array write loop avoids function overhead of setXYZ
     for (let i = 0; i < posAttr.count; i++) {
-      const p = cube.physics.particles[cube.vertexParticleMapping[i]];
-      posAttr.setXYZ(i, p.position.x, p.position.y, p.position.z);
+      const p = cube.physics.particles[mapping[i]];
+      const base = i * 3;
+      array[base] = p.position.x;
+      array[base + 1] = p.position.y;
+      array[base + 2] = p.position.z;
     }
     posAttr.needsUpdate = true;
-    cube.geo.computeVertexNormals();
     cube.geo.computeBoundingSphere();
 
     // Update debug helpers
