@@ -100,10 +100,15 @@ export class JellyPhysics {
     this.segments = segments;
     // Cap substeps at 4 for massive performance boost on mobile at High/Super resolutions
     this.substepsPerUpdate = segments <= 3 ? 1 : segments <= 5 ? 2 : 4;
-    // Add significant structural damping at very high resolutions to keep it stable with fewer substeps
-    if (segments > 8) {
-      this.dampingMultiplier *= 2.5; 
-      this.stiffnessMultiplier *= 0.8; // Also slightly soften the springs to prevent aggressive snapback jitter
+    
+    // As resolution (n) increases, particle mass decreases as O(1/n^3) while spring stiffness 
+    // needs to scale up, making the system highly stiff and prone to explosion at low substeps.
+    // We must aggressively scale down the stiffness for High/Super to keep it stable.
+    if (segments >= 8) {
+      // For segments=8 (High) and segments=12 (Super)
+      const scale = segments === 12 ? 0.25 : 0.6; 
+      this.stiffnessMultiplier *= scale;
+      this.dampingMultiplier *= (segments === 12 ? 3.0 : 1.5);
     }
     this.init(segments, size);
   }
