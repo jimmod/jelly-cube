@@ -328,7 +328,7 @@ function rebuildAllCubes(segments: number, count: number, size: number) {
   updateBounds();
   
   // Shift all cubes down to start near the bottom edge
-  const startY = floor.position.y + cubeSize / 2 + 1.0; // 1.0 unit above floor
+  const startY = floor.position.y + cubeSize; // Spawn with a gap of half the cube size from the bottom (since center is + cubeSize/2)
   for (const cube of cubes) {
     // We only need to shift by the difference from where they were spawned (which was around y=0.5)
     // Actually it's easier to just calculate the shift amount
