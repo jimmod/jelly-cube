@@ -377,6 +377,26 @@ export function createUI(onChange: UIChangeCallback): UIState {
   });
   body.appendChild(velToggle);
 
+  // ── Reset Button ────────────────────────────────────────────────
+  const btnGroup = createGroup('');
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset to Defaults';
+  resetBtn.style.width = '100%';
+  resetBtn.style.padding = '8px';
+  resetBtn.style.marginTop = '12px';
+  resetBtn.style.fontSize = '12px';
+  resetBtn.style.cursor = 'pointer';
+  resetBtn.style.background = '#ef4444'; // Red-500
+  resetBtn.style.border = 'none';
+  resetBtn.style.color = '#fff';
+  resetBtn.style.borderRadius = '4px';
+  resetBtn.style.fontWeight = '600';
+  resetBtn.addEventListener('click', () => {
+    window.location.reload();
+  });
+  btnGroup.replaceChildren(resetBtn);
+  body.appendChild(btnGroup);
+
   panel.appendChild(body);
   document.body.appendChild(panel);
 
