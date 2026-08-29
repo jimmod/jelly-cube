@@ -95,15 +95,61 @@ export function createUI(onChange: UIChangeCallback): UIState {
 
 
 
+  // ── Material Presets ────────────────────────────────────────────
+  const presetsGroup = createGroup('Presets');
+  const presetsContainer = document.createElement('div');
+  presetsContainer.style.display = 'flex';
+  presetsContainer.style.gap = '8px';
+  presetsContainer.style.marginTop = '4px';
+
+  // We declare the sliders below so we can update them when a preset is clicked
+  let bounceSlider: HTMLInputElement;
+  let dampingSlider: HTMLInputElement;
+
+  const createPresetBtn = (label: string, elasticity: number, damping: number) => {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.style.flex = '1';
+    btn.style.padding = '4px';
+    btn.style.fontSize = '12px';
+    btn.style.cursor = 'pointer';
+    btn.style.background = 'rgba(255, 255, 255, 0.1)';
+    btn.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    btn.style.color = '#fff';
+    btn.style.borderRadius = '4px';
+    btn.addEventListener('click', () => {
+      state.elasticity = elasticity;
+      state.damping = damping;
+      
+      if (bounceSlider) bounceSlider.value = String(elasticity);
+      const bounceValEl = document.getElementById('bounce-value');
+      if (bounceValEl) bounceValEl.textContent = elasticity.toFixed(1);
+      
+      if (dampingSlider) dampingSlider.value = String(damping);
+      const dampValEl = document.getElementById('damp-value');
+      if (dampValEl) dampValEl.textContent = damping.toFixed(1);
+      
+      onChange({ ...state });
+    });
+    return btn;
+  };
+
+  presetsContainer.appendChild(createPresetBtn('💧 Water', 0.5, 0.5));
+  presetsContainer.appendChild(createPresetBtn('🍯 Slime', 0.3, 1.0)); // Soft, stretches a lot, but can still move
+  presetsContainer.appendChild(createPresetBtn('🍮 Jello', 2.0, 1.0));
+  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.2, 3.0)); // High damping makes it feel heavy/unmovable
+  
+  presetsGroup.appendChild(presetsContainer);
+  body.appendChild(presetsGroup);
+
   // ── Elasticity slider ───────────────────────────────────────────
   const elastGroup = createGroup('');
   const elastLabel = document.createElement('label');
   elastLabel.className = 'control-label';
   elastLabel.innerHTML = 'Elasticity <span class="slider-value" id="bounce-value">1.0×</span>';
-  // Replace the auto-generated label
   elastGroup.replaceChildren(elastLabel);
 
-  const bounceSlider = document.createElement('input');
+  bounceSlider = document.createElement('input');
   bounceSlider.type = 'range';
   bounceSlider.id = 'bounce-slider';
   bounceSlider.min = '0.1';
@@ -120,42 +166,29 @@ export function createUI(onChange: UIChangeCallback): UIState {
   elastGroup.appendChild(bounceSlider);
   body.appendChild(elastGroup);
 
-  // ── Material Presets ────────────────────────────────────────────
-  const presetsGroup = createGroup('Presets');
-  const presetsContainer = document.createElement('div');
-  presetsContainer.style.display = 'flex';
-  presetsContainer.style.gap = '8px';
-  presetsContainer.style.marginTop = '4px';
+  // ── Damping slider ──────────────────────────────────────────────
+  const dampGroup = createGroup('');
+  const dampLabel = document.createElement('label');
+  dampLabel.className = 'control-label';
+  dampLabel.innerHTML = 'Damping <span class="slider-value" id="damp-value">1.0×</span>';
+  dampGroup.replaceChildren(dampLabel);
 
-  const createPresetBtn = (label: string, elasticity: number, damping: number) => {
-    const btn = document.createElement('button');
-    btn.textContent = label;
-    btn.style.flex = '1';
-    btn.style.padding = '4px';
-    btn.style.fontSize = '12px';
-    btn.style.cursor = 'pointer';
-    btn.style.background = 'rgba(255, 255, 255, 0.1)';
-    btn.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-    btn.style.color = '#fff';
-    btn.style.borderRadius = '4px';
-    btn.addEventListener('click', () => {
-      state.elasticity = elasticity;
-      state.damping = damping;
-      bounceSlider.value = String(elasticity);
-      const bounceValEl = document.getElementById('bounce-value');
-      if (bounceValEl) bounceValEl.textContent = elasticity.toFixed(1);
-      onChange({ ...state });
-    });
-    return btn;
-  };
-
-  presetsContainer.appendChild(createPresetBtn('💧 Water', 0.5, 0.5));
-  presetsContainer.appendChild(createPresetBtn('🍯 Slime', 0.3, 1.0)); // Soft, stretches a lot, but can still move
-  presetsContainer.appendChild(createPresetBtn('🍮 Jello', 2.0, 1.0));
-  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.2, 3.0)); // High damping makes it feel heavy/unmovable
-  
-  presetsGroup.appendChild(presetsContainer);
-  body.appendChild(presetsGroup);
+  dampingSlider = document.createElement('input');
+  dampingSlider.type = 'range';
+  dampingSlider.id = 'damping-slider';
+  dampingSlider.min = '0.1';
+  dampingSlider.max = '5.0';
+  dampingSlider.step = '0.1';
+  dampingSlider.value = String(state.damping);
+  dampingSlider.addEventListener('input', () => {
+    const val = parseFloat(dampingSlider.value);
+    state.damping = val;
+    const valueEl = document.getElementById('damp-value');
+    if (valueEl) valueEl.textContent = `${val.toFixed(1)}`;
+    onChange({ ...state });
+  });
+  dampGroup.appendChild(dampingSlider);
+  body.appendChild(dampGroup);
 
   // ── Gravity slider ──────────────────────────────────────────────
   const gravGroup = createGroup('');
