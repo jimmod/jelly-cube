@@ -289,16 +289,15 @@ function getCubeOffsets(count: number): number[] {
   return offsets;
 }
 
-function rebuildAllCubes(segments: number, count: number) {
+function rebuildAllCubes(segments: number, count: number, size: number) {
   // Clear existing
   for (const cube of cubes) {
     removeJellyCube(cube);
   }
   cubes.length = 0;
 
-  // Calculate dynamic size based on screen width (so it's smaller on mobile)
-  // Max size is 4.0. On a 375px phone screen, it will be 375 * 0.008 = 3.0
-  const cubeSize = Math.min(4.0, window.innerWidth * 0.008);
+  // Use the size from UI
+  const cubeSize = size;
 
   // Create new cubes
   const offsets = getCubeOffsets(count);
@@ -418,14 +417,17 @@ renderer.domElement.addEventListener('pointercancel', onPointerUp);
 
 // ─── UI ──────────────────────────────────────────────────────────────────────
 let uiState: UIState;
+let currentCubeSize = 0; // 0 initially to force first build
 
 function onUIChange(state: UIState) {
   const segmentsChanged = cubes.length === 0 || getSegments(state.resolution) !== cubes[0].physics.segments;
   const countChanged = state.cubeCount !== cubes.length;
+  const sizeChanged = state.cubeSize !== currentCubeSize;
 
-  if (segmentsChanged || countChanged) {
+  if (segmentsChanged || countChanged || sizeChanged) {
+    currentCubeSize = state.cubeSize;
     // Only ever build 1 cube now as multiple cubes have no collisions
-    rebuildAllCubes(getSegments(state.resolution), 1);
+    rebuildAllCubes(getSegments(state.resolution), 1, currentCubeSize);
 
     // Rebuild debug helpers if active
     for (const cube of cubes) {
@@ -485,7 +487,7 @@ window.addEventListener('resize', () => {
 });
 
 // ─── Init ────────────────────────────────────────────────────────────────────
-rebuildAllCubes(getSegments(uiState.resolution), 1);
+rebuildAllCubes(getSegments(uiState.resolution), 1, uiState.cubeSize);
 
 // ─── Animation Loop ──────────────────────────────────────────────────────────
 const clock = new THREE.Clock();

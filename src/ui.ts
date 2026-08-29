@@ -3,6 +3,7 @@ export type Resolution = 'low' | 'medium' | 'high' | 'super';
 export interface UIState {
   resolution: Resolution;
   cubeCount: number;
+  cubeSize: number; // 0.5 to 5.0, default 3.0
   elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 1.0
   gravity: number; // 0 (float) to 10 (fast fall), default 5
   showBox: boolean;
@@ -26,6 +27,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
   const state: UIState = {
     resolution: 'medium',
     cubeCount: 1,
+    cubeSize: 3.0,
     elasticity: 1.0,
     gravity: 5,
     showBox: false,
@@ -128,6 +130,37 @@ export function createUI(onChange: UIChangeCallback): UIState {
   });
   gravGroup.appendChild(gravSlider);
   body.appendChild(gravGroup);
+
+  // ── Size slider ─────────────────────────────────────────────────
+  const sizeGroup = createGroup('');
+  const sizeLabel = document.createElement('label');
+  sizeLabel.className = 'control-label';
+  sizeLabel.innerHTML = 'Size <span class="slider-value" id="size-value">3.0</span>';
+  sizeGroup.replaceChildren(sizeLabel);
+
+  const sizeSlider = document.createElement('input');
+  sizeSlider.type = 'range';
+  sizeSlider.id = 'size-slider';
+  sizeSlider.min = '0.5';
+  sizeSlider.max = '5.0';
+  sizeSlider.step = '0.5';
+  sizeSlider.value = String(state.cubeSize);
+  // Rebuilding the cube is expensive, so we only want to do it on change, not input
+  sizeSlider.addEventListener('change', () => {
+    const val = parseFloat(sizeSlider.value);
+    state.cubeSize = val;
+    const valueEl = document.getElementById('size-value');
+    if (valueEl) valueEl.textContent = `${val.toFixed(1)}`;
+    onChange({ ...state });
+  });
+  // Update the label instantly while dragging
+  sizeSlider.addEventListener('input', () => {
+    const val = parseFloat(sizeSlider.value);
+    const valueEl = document.getElementById('size-value');
+    if (valueEl) valueEl.textContent = `${val.toFixed(1)}`;
+  });
+  sizeGroup.appendChild(sizeSlider);
+  body.appendChild(sizeGroup);
 
   // ── Separator ───────────────────────────────────────────────────
   const sep = document.createElement('div');
