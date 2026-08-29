@@ -10,6 +10,8 @@ export interface UIState {
   damping: number; // 0.1 to 5.0, default 1.0
   gravity: number; // 0 (float) to 10 (fast fall), default 5
   tiltGravity: boolean;
+  textureMode: 'default' | 'rainbow' | 'color' | 'file';
+  customColor: string;
   textureUrl: string | null;
   soundEnabled: boolean;
   showBox: boolean;
@@ -38,6 +40,8 @@ export function createUI(onChange: UIChangeCallback): UIState {
     damping: 1.0,
     gravity: 5,
     tiltGravity: false,
+    textureMode: 'default',
+    customColor: '#ff0055',
     textureUrl: null,
     soundEnabled: false,
     showBox: false,
@@ -239,26 +243,83 @@ export function createUI(onChange: UIChangeCallback): UIState {
   });
   body.appendChild(soundToggle);
 
-  // ── Texture Upload ──────────────────────────────────────────────
-  const uploadGroup = createGroup('Custom Texture');
-  const uploadInput = document.createElement('input');
-  uploadInput.type = 'file';
-  uploadInput.accept = 'image/*';
-  uploadInput.style.width = '100%';
-  uploadInput.style.marginTop = '4px';
-  uploadInput.style.fontSize = '12px';
-  uploadInput.style.color = '#e2e8f0';
-  uploadInput.addEventListener('change', (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (file) {
-      if (state.textureUrl) URL.revokeObjectURL(state.textureUrl);
+  // ── Texture Presets ──────────────────────────────────────────────
+  const texGroup = createGroup('Texture');
+  
+  const texSelect = document.createElement('select');
+  texSelect.style.width = '100%';
+  texSelect.style.padding = '4px';
+  texSelect.style.marginBottom = '8px';
+  texSelect.style.background = 'rgba(255, 255, 255, 0.1)';
+  texSelect.style.color = '#fff';
+  texSelect.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+  texSelect.style.borderRadius = '4px';
+  
+  const modes = [
+    { value: 'default', label: 'Default' },
+    { value: 'rainbow', label: 'Rainbow' },
+    { value: 'color', label: 'Select colour' },
+    { value: 'file', label: 'File' }
+  ];
+  
+  modes.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.value;
+    opt.textContent = m.label;
+    // ensure text color is readable on dropdowns (some browsers use white bg for options)
+    opt.style.color = '#000'; 
+    texSelect.appendChild(opt);
+  });
+  
+  texSelect.value = state.textureMode;
+
+  const colorPickerContainer = document.createElement('div');
+  colorPickerContainer.style.display = state.textureMode === 'color' ? 'block' : 'none';
+  colorPickerContainer.style.marginBottom = '8px';
+  
+  const colorPicker = document.createElement('input');
+  colorPicker.type = 'color';
+  colorPicker.value = state.customColor;
+  colorPicker.style.width = '100%';
+  colorPicker.style.height = '30px';
+  colorPicker.style.cursor = 'pointer';
+  colorPickerContainer.appendChild(colorPicker);
+
+  const fileInputContainer = document.createElement('div');
+  fileInputContainer.style.display = state.textureMode === 'file' ? 'block' : 'none';
+  
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/*';
+  fileInput.style.fontSize = '12px';
+  fileInputContainer.appendChild(fileInput);
+
+  texSelect.addEventListener('change', () => {
+    state.textureMode = texSelect.value as any;
+    colorPickerContainer.style.display = state.textureMode === 'color' ? 'block' : 'none';
+    fileInputContainer.style.display = state.textureMode === 'file' ? 'block' : 'none';
+    onChange({ ...state });
+  });
+
+  colorPicker.addEventListener('input', () => {
+    state.customColor = colorPicker.value;
+    onChange({ ...state });
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    const target = e.target as HTMLInputElement;
+    if (target.files && target.files.length > 0) {
+      const file = target.files[0];
       const url = URL.createObjectURL(file);
       state.textureUrl = url;
       onChange({ ...state });
     }
   });
-  uploadGroup.appendChild(uploadInput);
-  body.appendChild(uploadGroup);
+
+  texGroup.appendChild(texSelect);
+  texGroup.appendChild(colorPickerContainer);
+  texGroup.appendChild(fileInputContainer);
+  body.appendChild(texGroup);
 
   // ── Separator ───────────────────────────────────────────────────
   const sep = document.createElement('div');

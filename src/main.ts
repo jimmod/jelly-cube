@@ -57,7 +57,9 @@ scene.add(floor);
 const normalShader = {
   uniforms: {
     tDiffuse: { value: null },
-    hasTexture: { value: 0 }
+    hasTexture: { value: 0 },
+    textureMode: { value: 0 },
+    uColor: { value: new THREE.Color() }
   },
   vertexShader: `
     varying vec3 vNormal;
@@ -73,6 +75,8 @@ const normalShader = {
   fragmentShader: `
     uniform sampler2D tDiffuse;
     uniform int hasTexture;
+    uniform int textureMode;
+    uniform vec3 uColor;
     
     varying vec3 vNormal;
     varying vec3 vWorldPos;
@@ -82,9 +86,17 @@ const normalShader = {
       vec3 n = normalize(vNormal);
       vec3 baseColor;
       
-      if (hasTexture == 1) {
+      if (textureMode == 3 && hasTexture == 1) {
+        // File texture
         baseColor = texture2D(tDiffuse, vUv).rgb;
+      } else if (textureMode == 1) {
+        // Rainbow mode (map normals to colors)
+        baseColor = abs(n) * 1.2; // use absolute normals for symmetry, brightened
+      } else if (textureMode == 2) {
+        // Custom color
+        baseColor = uColor;
       } else {
+        // Default (mode == 0)
         // Map normals to vibrant magenta/green like the reference
         baseColor = vec3(
           n.x * 0.5 + 0.5,
@@ -486,8 +498,16 @@ function onUIChange(state: UIState) {
     }
   }
 
-  // Update Texture
-  if (state.textureUrl !== currentTextureUrl) {
+  // Update Texture & Mode
+  const modeMap: Record<string, number> = { 'default': 0, 'rainbow': 1, 'color': 2, 'file': 3 };
+  const texModeInt = modeMap[state.textureMode] ?? 0;
+  
+  for (const cube of cubes) {
+    cube.mat.uniforms.textureMode.value = texModeInt;
+    cube.mat.uniforms.uColor.value.set(state.customColor);
+  }
+
+  if (state.textureMode === 'file' && state.textureUrl !== currentTextureUrl) {
     currentTextureUrl = state.textureUrl;
     if (currentTextureUrl && currentTextureUrl !== 'force-reapply') {
       const loader = new THREE.TextureLoader();
