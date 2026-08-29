@@ -35,7 +35,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
     resolution: 'medium',
     cubeCount: 1,
     cubeSize: 3.0,
-    elasticity: 1.0,
+    elasticity: 2.0, // Default to Jello physics
     damping: 1.0,
     gravity: 5,
     tiltGravity: false,
@@ -134,9 +134,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
     return btn;
   };
 
+  presetsContainer.appendChild(createPresetBtn('🍮 Jello', 2.0, 1.0));
   presetsContainer.appendChild(createPresetBtn('💧 Water', 0.5, 0.5));
   presetsContainer.appendChild(createPresetBtn('🍯 Slime', 0.3, 1.0)); // Soft, stretches a lot, but can still move
-  presetsContainer.appendChild(createPresetBtn('🍮 Jello', 2.0, 1.0));
   presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.2, 3.0)); // High damping makes it feel heavy/unmovable
   
   presetsGroup.appendChild(presetsContainer);
