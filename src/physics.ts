@@ -9,6 +9,7 @@ export class Particle {
   force: THREE.Vector3;
   invMass: number;
   restPosition: THREE.Vector3;
+  initialZ: number;
 
   constructor(x: number, y: number, z: number, mass: number = 1.0) {
     this.mass = mass;
@@ -18,6 +19,7 @@ export class Particle {
     this.velocity = new THREE.Vector3(0, 0, 0);
     this.force = new THREE.Vector3(0, 0, 0);
     this.restPosition = new THREE.Vector3(x, y, z);
+    this.initialZ = z;
   }
 }
 
@@ -339,6 +341,11 @@ export class JellyPhysics {
       p.position.x += p.velocity.x * dt;
       p.position.y += p.velocity.y * dt;
       p.position.z += p.velocity.z * dt;
+      
+      // Enforce pure 2D movement by locking Z
+      p.position.z = p.initialZ;
+      p.velocity.z = 0;
+      p.force.z = 0;
 
       // Screen boundary collisions
       const restitution = 0.5; // bounce factor

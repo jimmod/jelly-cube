@@ -326,6 +326,19 @@ function rebuildAllCubes(segments: number, count: number, size: number) {
   
   // Update screen bounds for collisions
   updateBounds();
+  
+  // Shift all cubes down to start near the bottom edge
+  const startY = floor.position.y + cubeSize / 2 + 1.0; // 1.0 unit above floor
+  for (const cube of cubes) {
+    // We only need to shift by the difference from where they were spawned (which was around y=0.5)
+    // Actually it's easier to just calculate the shift amount
+    const currentCenterY = 0.5; 
+    const shiftY = startY - currentCenterY;
+    
+    for (const p of cube.physics.particles) {
+      p.position.y += shiftY;
+    }
+  }
 }
 
 function updateCamera(cubeCount: number) {
@@ -346,8 +359,11 @@ function updateBounds() {
   const bottomRight = new THREE.Vector3();
   boundsRaycaster.ray.intersectPlane(zPlane, bottomRight);
   
+  // Match shadow floor to the visible screen bottom
+  floor.position.y = bottomRight.y;
+  
   for (const cube of cubes) {
-    cube.physics.setBounds(topLeft.x, bottomRight.x, Math.max(0, bottomRight.y), topLeft.y);
+    cube.physics.setBounds(topLeft.x, bottomRight.x, bottomRight.y, topLeft.y);
   }
 }
 
