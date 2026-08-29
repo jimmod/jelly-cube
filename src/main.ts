@@ -328,15 +328,15 @@ function rebuildAllCubes(segments: number, count: number, size: number) {
   updateBounds();
   
   // Shift all cubes down to start near the bottom edge
-  const startY = floor.position.y + cubeSize; // Spawn with a gap of half the cube size from the bottom (since center is + cubeSize/2)
+  // The user wants the gap between the bottom of the cube and the bottom edge to be ~ cubeSize / 2
+  // The bottom of the cube is currently at y = 0.5
+  const targetBottomY = floor.position.y + (cubeSize / 2);
+  const shiftY = targetBottomY - 0.5;
+  
   for (const cube of cubes) {
-    // We only need to shift by the difference from where they were spawned (which was around y=0.5)
-    // Actually it's easier to just calculate the shift amount
-    const currentCenterY = 0.5; 
-    const shiftY = startY - currentCenterY;
-    
     for (const p of cube.physics.particles) {
       p.position.y += shiftY;
+      p.restPosition.y += shiftY; // also update rest position for correctness
     }
   }
 }
@@ -345,6 +345,7 @@ function updateCamera(cubeCount: number) {
   const distance = 16 + (cubeCount - 1) * 4;
   camera.position.set(0, 4, distance);
   camera.lookAt(0, 2, 0);
+  camera.updateMatrixWorld(); // Important: Update matrices before raycasting for bounds!
 }
 
 function updateBounds() {
