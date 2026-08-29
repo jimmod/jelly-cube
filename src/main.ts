@@ -109,15 +109,24 @@ const normalShader = {
         baseColor *= 1.1;
       }
       
-      // Subtle lighting
-      vec3 lightDir = normalize(vec3(0.5, 1.0, 0.7));
-      float diffuse = max(dot(n, lightDir), 0.0) * 0.3 + 0.7;
-      vec3 color = baseColor * diffuse;
-      
-      // Edge darkening for depth
-      vec3 viewDir = normalize(cameraPosition - vWorldPos);
-      float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 2.0);
-      color = mix(color, color * 0.5, fresnel * 0.3);
+      // Apply lighting and edge darkening conditionally
+      vec3 color = baseColor;
+      if (textureMode != 3) {
+        // Subtle directional lighting for solid colors
+        vec3 lightDir = normalize(vec3(0.5, 1.0, 0.7));
+        float diffuse = max(dot(n, lightDir), 0.0) * 0.3 + 0.7;
+        color = baseColor * diffuse;
+        
+        // Edge darkening for depth
+        vec3 viewDir = normalize(cameraPosition - vWorldPos);
+        float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 2.0);
+        color = mix(color, color * 0.5, fresnel * 0.3);
+      } else {
+        // Extremely subtle diffuse for photo textures to avoid ruining the image
+        vec3 lightDir = normalize(vec3(0.5, 1.0, 0.7));
+        float diffuse = max(dot(n, lightDir), 0.0) * 0.1 + 0.9;
+        color = baseColor * diffuse;
+      }
       
       gl_FragColor = vec4(color, 1.0);
     }
