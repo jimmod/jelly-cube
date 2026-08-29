@@ -8,6 +8,7 @@ export interface UIState {
   cubeSize: number; // 0.5 to 5.0, default 3.0
   elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 1.0
   gravity: number; // 0 (float) to 10 (fast fall), default 5
+  textureUrl: string | null;
   soundEnabled: boolean;
   showBox: boolean;
   showVelocity: boolean;
@@ -33,6 +34,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
     cubeSize: 3.0,
     elasticity: 1.0,
     gravity: 5,
+    textureUrl: null,
     soundEnabled: false,
     showBox: false,
     showVelocity: false,
@@ -173,6 +175,27 @@ export function createUI(onChange: UIChangeCallback): UIState {
     onChange({ ...state });
   });
   body.appendChild(soundToggle);
+
+  // ── Texture Upload ──────────────────────────────────────────────
+  const uploadGroup = createGroup('Custom Texture');
+  const uploadInput = document.createElement('input');
+  uploadInput.type = 'file';
+  uploadInput.accept = 'image/*';
+  uploadInput.style.width = '100%';
+  uploadInput.style.marginTop = '4px';
+  uploadInput.style.fontSize = '12px';
+  uploadInput.style.color = '#e2e8f0';
+  uploadInput.addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (file) {
+      if (state.textureUrl) URL.revokeObjectURL(state.textureUrl);
+      const url = URL.createObjectURL(file);
+      state.textureUrl = url;
+      onChange({ ...state });
+    }
+  });
+  uploadGroup.appendChild(uploadInput);
+  body.appendChild(uploadGroup);
 
   // ── Separator ───────────────────────────────────────────────────
   const sep = document.createElement('div');

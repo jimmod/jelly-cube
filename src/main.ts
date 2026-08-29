@@ -55,37 +55,51 @@ scene.add(floor);
 
 // ─── Normal-color material (matches reference: surface normals → color) ─────
 const normalShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    hasTexture: { value: 0 }
+  },
   vertexShader: `
     varying vec3 vNormal;
     varying vec3 vWorldPos;
+    varying vec2 vUv;
     void main() {
+      vUv = uv;
       vNormal = normalize(normalMatrix * normal);
       vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
   fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform int hasTexture;
+    
     varying vec3 vNormal;
     varying vec3 vWorldPos;
+    varying vec2 vUv;
 
     void main() {
       vec3 n = normalize(vNormal);
+      vec3 baseColor;
       
-      // Map normals to vibrant magenta/green like the reference
-      vec3 color = vec3(
-        n.x * 0.5 + 0.5,
-        n.y * 0.5 + 0.5,
-        n.z * 0.3 + 0.7
-      );
-      
-      // Enhance saturation and vibrancy
-      color = pow(color, vec3(0.8));
-      color *= 1.1;
+      if (hasTexture == 1) {
+        baseColor = texture2D(tDiffuse, vUv).rgb;
+      } else {
+        // Map normals to vibrant magenta/green like the reference
+        baseColor = vec3(
+          n.x * 0.5 + 0.5,
+          n.y * 0.5 + 0.5,
+          n.z * 0.3 + 0.7
+        );
+        // Enhance saturation and vibrancy
+        baseColor = pow(baseColor, vec3(0.8));
+        baseColor *= 1.1;
+      }
       
       // Subtle lighting
       vec3 lightDir = normalize(vec3(0.5, 1.0, 0.7));
       float diffuse = max(dot(n, lightDir), 0.0) * 0.3 + 0.7;
-      color *= diffuse;
+      vec3 color = baseColor * diffuse;
       
       // Edge darkening for depth
       vec3 viewDir = normalize(cameraPosition - vWorldPos);
@@ -123,6 +137,7 @@ function createJellyCube(segments: number, size: number, offsetX: number): Jelly
   const geo = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
 
   const mat = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.clone(normalShader.uniforms),
     vertexShader: normalShader.vertexShader,
     fragmentShader: normalShader.fragmentShader,
     side: THREE.DoubleSide,
@@ -420,16 +435,20 @@ renderer.domElement.addEventListener('pointercancel', onPointerUp);
 // ─── UI ──────────────────────────────────────────────────────────────────────
 let uiState: UIState;
 let currentCubeSize = 0; // 0 initially to force first build
+let currentTextureUrl: string | null = null;
 
 function onUIChange(state: UIState) {
   const segmentsChanged = cubes.length === 0 || getSegments(state.resolution) !== cubes[0].physics.segments;
   const countChanged = state.cubeCount !== cubes.length;
   const sizeChanged = state.cubeSize !== currentCubeSize;
 
+
   if (segmentsChanged || countChanged || sizeChanged) {
     currentCubeSize = state.cubeSize;
     // Only ever build 1 cube now as multiple cubes have no collisions
     rebuildAllCubes(getSegments(state.resolution), 1, currentCubeSize);
+    // Force re-apply texture to new cubes
+    currentTextureUrl = 'force-reapply';
 
     // Rebuild debug helpers if active
     for (const cube of cubes) {
@@ -440,6 +459,39 @@ function onUIChange(state: UIState) {
       if (state.showVelocity) {
         cube.velocityHelper = buildVelocityHelper(cube);
         scene.add(cube.velocityHelper);
+      }
+    }
+  }
+
+  // Update Texture
+  if (state.textureUrl !== currentTextureUrl) {
+    currentTextureUrl = state.textureUrl;
+    if (currentTextureUrl && currentTextureUrl !== 'force-reapply') {
+      const loader = new THREE.TextureLoader();
+      loader.load(currentTextureUrl, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace; // keep it looking right
+        for (const cube of cubes) {
+          cube.mat.uniforms.tDiffuse.value = tex;
+          cube.mat.uniforms.hasTexture.value = 1;
+        }
+      });
+    } else if (!currentTextureUrl || currentTextureUrl === 'force-reapply') {
+      currentTextureUrl = state.textureUrl; // actually clear or reapply
+      for (const cube of cubes) {
+        if (!state.textureUrl) {
+          cube.mat.uniforms.tDiffuse.value = null;
+          cube.mat.uniforms.hasTexture.value = 0;
+        } else {
+          // It was a force-reapply and URL exists, we need to load it again or reuse it
+          const loader = new THREE.TextureLoader();
+          loader.load(state.textureUrl, (tex) => {
+            tex.colorSpace = THREE.SRGBColorSpace;
+            for (const cube of cubes) {
+              cube.mat.uniforms.tDiffuse.value = tex;
+              cube.mat.uniforms.hasTexture.value = 1;
+            }
+          });
+        }
       }
     }
   }
