@@ -37,7 +37,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
     resolution: 'medium',
     cubeCount: 1,
     cubeSize: 3.0,
-    elasticity: 1.5, // Default to Classic Gelatin
+    elasticity: 1.5, // Default to Gelatin
     friction: 0.3,
     weight: 1.0,
     pressure: 0.8,
@@ -187,7 +187,10 @@ export function createUI(onChange: UIChangeCallback): UIState {
   presetsGroup.appendChild(presetsContainer);
   body.appendChild(presetsGroup);
 
-  // ── Elasticity slider ───────────────────────────────────────────
+  // ── Collapsible Custom Material Physics ─────────────────────────
+  const physicsAccordion = createAccordion('⚙️ Custom Material Physics');
+
+  // Elasticity slider
   const elastGroup = createGroupWithInfo(
     'Elasticity',
     'Controls how fast the cube returns to its original shape (spring return force).',
@@ -209,9 +212,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
     onChange({ ...state });
   });
   elastGroup.appendChild(bounceSlider);
-  body.appendChild(elastGroup);
+  physicsAccordion.content.appendChild(elastGroup);
 
-  // ── Friction slider (formerly Damping) ───────────────────────────
+  // Friction slider (formerly Damping)
   const fricGroup = createGroupWithInfo(
     'Friction',
     'Controls how long the cube jiggles before stopping. Low = prolonged wiggle; High = thick viscous resistance.',
@@ -233,9 +236,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
     onChange({ ...state });
   });
   fricGroup.appendChild(frictionSlider);
-  body.appendChild(fricGroup);
+  physicsAccordion.content.appendChild(fricGroup);
 
-  // ── Weight slider (Mass & Inertia) ──────────────────────────────
+  // Weight slider (Mass & Inertia)
   const weightGroup = createGroupWithInfo(
     'Weight',
     'Mass and inertia of the cube. Higher mass creates more momentum and heavier deformation upon impacts.',
@@ -257,9 +260,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
     onChange({ ...state });
   });
   weightGroup.appendChild(weightSlider);
-  body.appendChild(weightGroup);
+  physicsAccordion.content.appendChild(weightGroup);
 
-  // ── Pressure slider (Soft-body Internal Volume) ─────────────────
+  // Pressure slider (Soft-body Internal Volume)
   const pressGroup = createGroupWithInfo(
     'Pressure',
     'Internal fluid/air volume. High = plump rigid ball; Low = deflated sack; Negative = vacuum implosion.',
@@ -281,7 +284,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
     onChange({ ...state });
   });
   pressGroup.appendChild(pressureSlider);
-  body.appendChild(pressGroup);
+  physicsAccordion.content.appendChild(pressGroup);
+
+  body.appendChild(physicsAccordion.container);
 
   // ── Gravity slider ──────────────────────────────────────────────
   const gravGroup = createGroupWithInfo(
@@ -459,13 +464,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
   sep.className = 'panel-separator';
   body.appendChild(sep);
 
-  // ── Debug section label ─────────────────────────────────────────
-  const debugLabel = document.createElement('div');
-  debugLabel.className = 'panel-section-label';
-  debugLabel.textContent = 'Debug';
-  body.appendChild(debugLabel);
+  // ── Collapsible Debug Section ───────────────────────────────────
+  const debugAccordion = createAccordion('🛠️ Debug Visualizers');
 
-  // ── Toggle switches ─────────────────────────────────────────────
   const boxToggle = createToggle(
     'Wireframe',
     state.showBox,
@@ -475,7 +476,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
       onChange({ ...state });
     }
   );
-  body.appendChild(boxToggle);
+  debugAccordion.content.appendChild(boxToggle);
 
   const velToggle = createToggle(
     'Velocity',
@@ -486,7 +487,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
       onChange({ ...state });
     }
   );
-  body.appendChild(velToggle);
+  debugAccordion.content.appendChild(velToggle);
+
+  body.appendChild(debugAccordion.container);
 
   // ── Reset Button ────────────────────────────────────────────────
   const btnGroup = document.createElement('div');
@@ -516,6 +519,42 @@ export function createUI(onChange: UIChangeCallback): UIState {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
+
+function createAccordion(title: string): { container: HTMLDivElement, content: HTMLDivElement } {
+  const container = document.createElement('div');
+  container.className = 'accordion-group';
+
+  const header = document.createElement('div');
+  header.className = 'accordion-header';
+
+  const titleWrapper = document.createElement('div');
+  titleWrapper.style.display = 'flex';
+  titleWrapper.style.alignItems = 'center';
+  titleWrapper.style.gap = '6px';
+
+  const chevron = document.createElement('span');
+  chevron.className = 'accordion-chevron';
+  chevron.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+
+  const titleText = document.createElement('span');
+  titleText.textContent = title;
+  titleWrapper.appendChild(chevron);
+  titleWrapper.appendChild(titleText);
+  header.appendChild(titleWrapper);
+
+  const content = document.createElement('div');
+  content.className = 'accordion-content';
+
+  header.addEventListener('click', () => {
+    const isOpen = header.classList.toggle('open');
+    content.classList.toggle('open', isOpen);
+  });
+
+  container.appendChild(header);
+  container.appendChild(content);
+
+  return { container, content };
+}
 
 function createGroupWithInfo(label: string, infoText: string, extraHtml: string = ''): HTMLDivElement {
   const group = document.createElement('div');
