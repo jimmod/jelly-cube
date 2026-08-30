@@ -6,8 +6,10 @@ export interface UIState {
   resolution: Resolution;
   cubeCount: number;
   cubeSize: number; // 0.5 to 5.0, default 3.0
-  elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 1.0
-  damping: number; // 0.1 to 5.0, default 1.0
+  elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 2.0 (Jello)
+  friction: number; // 0.1 (gelatinous wiggle) to 5.0 (muddy lag), default 1.0
+  weight: number; // 0.2 (light) to 3.0 (heavy inertia), default 1.0
+  pressure: number; // 0.0 (deflated sack) to 3.0 (plump rigid ball), default 1.2
   gravity: number; // 0 (float) to 10 (fast fall), default 5
   tiltGravity: boolean;
   textureMode: 'default' | 'rainbow' | 'color' | 'file';
@@ -36,7 +38,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
     cubeCount: 1,
     cubeSize: 3.0,
     elasticity: 2.0, // Default to Jello physics
-    damping: 1.0,
+    friction: 1.0,
+    weight: 1.0,
+    pressure: 1.2,
     gravity: 5,
     tiltGravity: false,
     textureMode: 'default',
@@ -93,8 +97,6 @@ export function createUI(onChange: UIChangeCallback): UIState {
   resGroup.appendChild(resSelect);
   body.appendChild(resGroup);
 
-
-
   // ── Material Presets ────────────────────────────────────────────
   const presetsGroup = createGroup('Presets');
   const presetsContainer = document.createElement('div');
@@ -102,11 +104,13 @@ export function createUI(onChange: UIChangeCallback): UIState {
   presetsContainer.style.gap = '8px';
   presetsContainer.style.marginTop = '4px';
 
-  // We declare the sliders below so we can update them when a preset is clicked
+  // Slider references to update when a preset button is clicked
   let bounceSlider: HTMLInputElement;
-  let dampingSlider: HTMLInputElement;
+  let frictionSlider: HTMLInputElement;
+  let weightSlider: HTMLInputElement;
+  let pressureSlider: HTMLInputElement;
 
-  const createPresetBtn = (label: string, elasticity: number, damping: number) => {
+  const createPresetBtn = (label: string, elasticity: number, friction: number, weight: number, pressure: number) => {
     const btn = document.createElement('button');
     btn.textContent = label;
     btn.style.flex = '1';
@@ -119,25 +123,36 @@ export function createUI(onChange: UIChangeCallback): UIState {
     btn.style.borderRadius = '4px';
     btn.addEventListener('click', () => {
       state.elasticity = elasticity;
-      state.damping = damping;
+      state.friction = friction;
+      state.weight = weight;
+      state.pressure = pressure;
       
       if (bounceSlider) bounceSlider.value = String(elasticity);
       const bounceValEl = document.getElementById('bounce-value');
-      if (bounceValEl) bounceValEl.textContent = elasticity.toFixed(1);
+      if (bounceValEl) bounceValEl.textContent = `${elasticity.toFixed(1)}×`;
       
-      if (dampingSlider) dampingSlider.value = String(damping);
-      const dampValEl = document.getElementById('damp-value');
-      if (dampValEl) dampValEl.textContent = damping.toFixed(1);
+      if (frictionSlider) frictionSlider.value = String(friction);
+      const fricValEl = document.getElementById('friction-value');
+      if (fricValEl) fricValEl.textContent = `${friction.toFixed(1)}×`;
+
+      if (weightSlider) weightSlider.value = String(weight);
+      const weightValEl = document.getElementById('weight-value');
+      if (weightValEl) weightValEl.textContent = `${weight.toFixed(1)}×`;
+
+      if (pressureSlider) pressureSlider.value = String(pressure);
+      const pressValEl = document.getElementById('pressure-value');
+      if (pressValEl) pressValEl.textContent = `${pressure.toFixed(1)}×`;
       
       onChange({ ...state });
     });
     return btn;
   };
 
-  presetsContainer.appendChild(createPresetBtn('🍮 Jello', 2.0, 1.0));
-  presetsContainer.appendChild(createPresetBtn('💧 Water', 0.5, 0.5));
-  presetsContainer.appendChild(createPresetBtn('🍯 Slime', 0.3, 1.0)); // Soft, stretches a lot, but can still move
-  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.2, 3.0)); // High damping makes it feel heavy/unmovable
+  // Preset Configurations based on physical rules
+  presetsContainer.appendChild(createPresetBtn('🍮 Jello', 2.0, 1.0, 1.0, 1.2));
+  presetsContainer.appendChild(createPresetBtn('💧 Water', 0.3, 0.5, 1.5, 2.5));
+  presetsContainer.appendChild(createPresetBtn('🍯 Slime', 0.4, 2.0, 1.2, 0.8));
+  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.1, 3.5, 2.0, 0.0));
   
   presetsGroup.appendChild(presetsContainer);
   body.appendChild(presetsGroup);
@@ -146,7 +161,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
   const elastGroup = createGroup('');
   const elastLabel = document.createElement('label');
   elastLabel.className = 'control-label';
-  elastLabel.innerHTML = 'Elasticity <span class="slider-value" id="bounce-value">1.0×</span>';
+  elastLabel.innerHTML = `Elasticity <span class="slider-value" id="bounce-value">${state.elasticity.toFixed(1)}×</span>`;
   elastGroup.replaceChildren(elastLabel);
 
   bounceSlider = document.createElement('input');
@@ -160,41 +175,89 @@ export function createUI(onChange: UIChangeCallback): UIState {
     const val = parseFloat(bounceSlider.value);
     state.elasticity = val;
     const valueEl = document.getElementById('bounce-value');
-    if (valueEl) valueEl.textContent = `${val.toFixed(1)}`;
+    if (valueEl) valueEl.textContent = `${val.toFixed(1)}×`;
     onChange({ ...state });
   });
   elastGroup.appendChild(bounceSlider);
   body.appendChild(elastGroup);
 
-  // ── Damping slider ──────────────────────────────────────────────
-  const dampGroup = createGroup('');
-  const dampLabel = document.createElement('label');
-  dampLabel.className = 'control-label';
-  dampLabel.innerHTML = 'Damping <span class="slider-value" id="damp-value">1.0×</span>';
-  dampGroup.replaceChildren(dampLabel);
+  // ── Friction slider (formerly Damping) ───────────────────────────
+  const fricGroup = createGroup('');
+  const fricLabel = document.createElement('label');
+  fricLabel.className = 'control-label';
+  fricLabel.innerHTML = `Friction <span class="slider-value" id="friction-value">${state.friction.toFixed(1)}×</span>`;
+  fricGroup.replaceChildren(fricLabel);
 
-  dampingSlider = document.createElement('input');
-  dampingSlider.type = 'range';
-  dampingSlider.id = 'damping-slider';
-  dampingSlider.min = '0.1';
-  dampingSlider.max = '5.0';
-  dampingSlider.step = '0.1';
-  dampingSlider.value = String(state.damping);
-  dampingSlider.addEventListener('input', () => {
-    const val = parseFloat(dampingSlider.value);
-    state.damping = val;
-    const valueEl = document.getElementById('damp-value');
-    if (valueEl) valueEl.textContent = `${val.toFixed(1)}`;
+  frictionSlider = document.createElement('input');
+  frictionSlider.type = 'range';
+  frictionSlider.id = 'friction-slider';
+  frictionSlider.min = '0.1';
+  frictionSlider.max = '5.0';
+  frictionSlider.step = '0.1';
+  frictionSlider.value = String(state.friction);
+  frictionSlider.addEventListener('input', () => {
+    const val = parseFloat(frictionSlider.value);
+    state.friction = val;
+    const valueEl = document.getElementById('friction-value');
+    if (valueEl) valueEl.textContent = `${val.toFixed(1)}×`;
     onChange({ ...state });
   });
-  dampGroup.appendChild(dampingSlider);
-  body.appendChild(dampGroup);
+  fricGroup.appendChild(frictionSlider);
+  body.appendChild(fricGroup);
+
+  // ── Weight slider (Mass & Inertia) ──────────────────────────────
+  const weightGroup = createGroup('');
+  const weightLabel = document.createElement('label');
+  weightLabel.className = 'control-label';
+  weightLabel.innerHTML = `Weight <span class="slider-value" id="weight-value">${state.weight.toFixed(1)}×</span>`;
+  weightGroup.replaceChildren(weightLabel);
+
+  weightSlider = document.createElement('input');
+  weightSlider.type = 'range';
+  weightSlider.id = 'weight-slider';
+  weightSlider.min = '0.2';
+  weightSlider.max = '3.0';
+  weightSlider.step = '0.1';
+  weightSlider.value = String(state.weight);
+  weightSlider.addEventListener('input', () => {
+    const val = parseFloat(weightSlider.value);
+    state.weight = val;
+    const valueEl = document.getElementById('weight-value');
+    if (valueEl) valueEl.textContent = `${val.toFixed(1)}×`;
+    onChange({ ...state });
+  });
+  weightGroup.appendChild(weightSlider);
+  body.appendChild(weightGroup);
+
+  // ── Pressure slider (Soft-body Internal Volume) ─────────────────
+  const pressGroup = createGroup('');
+  const pressLabel = document.createElement('label');
+  pressLabel.className = 'control-label';
+  pressLabel.innerHTML = `Pressure <span class="slider-value" id="pressure-value">${state.pressure.toFixed(1)}×</span>`;
+  pressGroup.replaceChildren(pressLabel);
+
+  pressureSlider = document.createElement('input');
+  pressureSlider.type = 'range';
+  pressureSlider.id = 'pressure-slider';
+  pressureSlider.min = '0.0';
+  pressureSlider.max = '3.0';
+  pressureSlider.step = '0.1';
+  pressureSlider.value = String(state.pressure);
+  pressureSlider.addEventListener('input', () => {
+    const val = parseFloat(pressureSlider.value);
+    state.pressure = val;
+    const valueEl = document.getElementById('pressure-value');
+    if (valueEl) valueEl.textContent = `${val.toFixed(1)}×`;
+    onChange({ ...state });
+  });
+  pressGroup.appendChild(pressureSlider);
+  body.appendChild(pressGroup);
 
   // ── Gravity slider ──────────────────────────────────────────────
   const gravGroup = createGroup('');
   const gravLabel = document.createElement('label');
   gravLabel.className = 'control-label';
-  gravLabel.innerHTML = 'Gravity <span class="slider-value" id="grav-value">5</span>';
+  gravLabel.innerHTML = `Gravity <span class="slider-value" id="grav-value">${state.gravity}</span>`;
   gravGroup.replaceChildren(gravLabel);
 
   const gravSlider = document.createElement('input');
@@ -240,7 +303,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
   const sizeGroup = createGroup('');
   const sizeLabel = document.createElement('label');
   sizeLabel.className = 'control-label';
-  sizeLabel.innerHTML = 'Size <span class="slider-value" id="size-value">3.0</span>';
+  sizeLabel.innerHTML = `Size <span class="slider-value" id="size-value">${state.cubeSize.toFixed(1)}</span>`;
   sizeGroup.replaceChildren(sizeLabel);
 
   const sizeSlider = document.createElement('input');
@@ -298,7 +361,6 @@ export function createUI(onChange: UIChangeCallback): UIState {
     const opt = document.createElement('option');
     opt.value = m.value;
     opt.textContent = m.label;
-    // ensure text color is readable on dropdowns (some browsers use white bg for options)
     opt.style.color = '#000'; 
     texSelect.appendChild(opt);
   });

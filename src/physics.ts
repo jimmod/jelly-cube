@@ -79,17 +79,30 @@ export interface DragInfo {
   offset: THREE.Vector3; // offset from drag center at time of grab
 }
 
+export interface SurfaceTriangle {
+  i1: number;
+  i2: number;
+  i3: number;
+}
+
 export class JellyPhysics {
   particles: Particle[] = [];
   springs: Spring[] = [];
+  surfaceTriangles: SurfaceTriangle[] = [];
   gravity: THREE.Vector3 = new THREE.Vector3(0, -20, 0);
   floorY = 0;
   globalDamping = 0.998;
   segments: number;
+  size: number = 3.0;
+  restVolume: number = 27.0;
   substepsPerUpdate: number;
-  stiffnessMultiplier = 1.0; // Elasticity: set by UI
-  dampingMultiplier = 1.0; // Viscosity/bounciness: set by UI
-  
+
+  // Physical parameters exposed to UI
+  stiffnessMultiplier = 1.0; // Elasticity: return spring stiffness
+  dampingMultiplier = 1.0;   // Friction / Viscosity: damping factor
+  weightMultiplier = 1.0;    // Weight / Mass: inertia scaling
+  pressureMultiplier = 1.0;  // Pressure: internal air/fluid volume pressure
+
   // Internal multipliers to keep high resolutions stable at low substeps
   private baseStiffnessScale = 1.0;
   private baseDampingScale = 1.0;
@@ -102,24 +115,28 @@ export class JellyPhysics {
 
   constructor(segments: number, size: number) {
     this.segments = segments;
-    // Cap substeps at 4 for massive performance boost on mobile at High/Super resolutions
+    this.size = size;
+    this.restVolume = size * size * size;
+
+    // Cap substeps at 4 for massive performance boost on mobile at High resolutions
     this.substepsPerUpdate = segments <= 3 ? 1 : segments <= 5 ? 2 : 4;
     
     // As resolution (n) increases, particle mass decreases as O(1/n^3) while spring stiffness 
     // needs to scale up, making the system highly stiff and prone to explosion at low substeps.
-    // We must aggressively scale down the stiffness for High/Super to keep it stable.
     if (segments >= 8) {
-      // For segments=8 (High) and segments=12 (Super)
-      this.baseStiffnessScale = segments === 12 ? 0.15 : 0.5; // Aggressive scale down
-      this.baseDampingScale = segments === 12 ? 4.0 : 2.0;
+      this.baseStiffnessScale = 0.5; // Aggressive scale down
+      this.baseDampingScale = 2.0;
     }
     this.init(segments, size);
   }
 
   init(segments: number, size: number) {
     this.segments = segments;
+    this.size = size;
+    this.restVolume = size * size * size;
     this.particles = [];
     this.springs = [];
+    this.surfaceTriangles = [];
 
     const n = segments + 1;
     const halfSize = size / 2.0;
@@ -143,6 +160,59 @@ export class JellyPhysics {
 
     // Index helper
     const idx = (x: number, y: number, z: number) => z * n * n + y * n + x;
+
+    // ─── Surface Triangles Generation (for 3D Volume & Internal Pressure) ──
+    for (let iy = 0; iy < segments; iy++) {
+      for (let ix = 0; ix < segments; ix++) {
+        // Front Face (+Z, normal (0, 0, 1))
+        const f00 = idx(ix, iy, n - 1);
+        const f10 = idx(ix + 1, iy, n - 1);
+        const f11 = idx(ix + 1, iy + 1, n - 1);
+        const f01 = idx(ix, iy + 1, n - 1);
+        this.surfaceTriangles.push({ i1: f00, i2: f10, i3: f11 });
+        this.surfaceTriangles.push({ i1: f00, i2: f11, i3: f01 });
+
+        // Back Face (-Z, normal (0, 0, -1))
+        const b00 = idx(ix, iy, 0);
+        const b10 = idx(ix + 1, iy, 0);
+        const b11 = idx(ix + 1, iy + 1, 0);
+        const b01 = idx(ix, iy + 1, 0);
+        this.surfaceTriangles.push({ i1: b00, i2: b11, i3: b10 });
+        this.surfaceTriangles.push({ i1: b00, i2: b01, i3: b11 });
+
+        // Top Face (+Y, normal (0, 1, 0))
+        const t00 = idx(ix, n - 1, iy);
+        const t10 = idx(ix + 1, n - 1, iy);
+        const t11 = idx(ix + 1, n - 1, iy + 1);
+        const t01 = idx(ix, n - 1, iy + 1);
+        this.surfaceTriangles.push({ i1: t00, i2: t11, i3: t10 });
+        this.surfaceTriangles.push({ i1: t00, i2: t01, i3: t11 });
+
+        // Bottom Face (-Y, normal (0, -1, 0))
+        const bot00 = idx(ix, 0, iy);
+        const bot10 = idx(ix + 1, 0, iy);
+        const bot11 = idx(ix + 1, 0, iy + 1);
+        const bot01 = idx(ix, 0, iy + 1);
+        this.surfaceTriangles.push({ i1: bot00, i2: bot10, i3: bot11 });
+        this.surfaceTriangles.push({ i1: bot00, i2: bot11, i3: bot01 });
+
+        // Right Face (+X, normal (1, 0, 0))
+        const r00 = idx(n - 1, ix, iy);
+        const r10 = idx(n - 1, ix, iy + 1);
+        const r11 = idx(n - 1, ix + 1, iy + 1);
+        const r01 = idx(n - 1, ix + 1, iy);
+        this.surfaceTriangles.push({ i1: r00, i2: r11, i3: r10 });
+        this.surfaceTriangles.push({ i1: r00, i2: r01, i3: r11 });
+
+        // Left Face (-X, normal (-1, 0, 0))
+        const l00 = idx(0, ix, iy);
+        const l10 = idx(0, ix, iy + 1);
+        const l11 = idx(0, ix + 1, iy + 1);
+        const l01 = idx(0, ix + 1, iy);
+        this.surfaceTriangles.push({ i1: l00, i2: l10, i3: l11 });
+        this.surfaceTriangles.push({ i1: l00, i2: l11, i3: l01 });
+      }
+    }
 
     // Spring stiffness: scale inversely with segments so material properties
     // remain consistent across different resolutions. (Area / Length = 1/N)
@@ -254,7 +324,7 @@ export class JellyPhysics {
     // to prevent numerical oscillation at high resolutions.
     let currentSubsteps = this.substepsPerUpdate;
     if (this.segments >= 8 && this.stiffnessMultiplier > 1.2) {
-      currentSubsteps = this.segments === 12 ? 8 : 6;
+      currentSubsteps = 6;
     }
 
     // Subdivide the timestep for stability at high resolutions
@@ -266,14 +336,17 @@ export class JellyPhysics {
   }
 
   private _substep(dt: number) {
-    // Reset forces, apply gravity
+    const weightMul = Math.max(0.1, this.weightMultiplier);
+
+    // Reset forces, apply gravity scaled by particle mass and weightMultiplier
     for (const p of this.particles) {
-      p.force.x = this.gravity.x * p.mass;
-      p.force.y = this.gravity.y * p.mass;
-      p.force.z = this.gravity.z * p.mass;
+      const pMass = p.mass * weightMul;
+      p.force.x = this.gravity.x * pMass;
+      p.force.y = this.gravity.y * pMass;
+      p.force.z = this.gravity.z * pMass;
     }
 
-    // Spring forces
+    // ─── Spring forces & Non-Newtonian Strain Rate Viscosity ───────
     for (const s of this.springs) {
       const dx = s.p2.position.x - s.p1.position.x;
       const dy = s.p2.position.y - s.p1.position.y;
@@ -282,8 +355,6 @@ export class JellyPhysics {
       if (dist < 1e-8) continue;
 
       const stretch = dist - s.restLength;
-      const forceMag = s.stiffness * (this.stiffnessMultiplier * this.baseStiffnessScale) * stretch;
-
       const invDist = 1.0 / dist;
       const dirX = dx * invDist;
       const dirY = dy * invDist;
@@ -292,7 +363,21 @@ export class JellyPhysics {
       const rvx = s.p2.velocity.x - s.p1.velocity.x;
       const rvy = s.p2.velocity.y - s.p1.velocity.y;
       const rvz = s.p2.velocity.z - s.p1.velocity.z;
-      const dampF = (rvx * dirX + rvy * dirY + rvz * dirZ) * (s.damping * this.dampingMultiplier * this.baseDampingScale);
+      const relSpeedAlongDir = rvx * dirX + rvy * dirY + rvz * dirZ;
+
+      // Non-Newtonian shear-thickening for Slime / dense fluids:
+      // High relative speed (sudden pressure/impact) causes molecules to lock, increasing resistance
+      const relSpeedSq = rvx * rvx + rvy * rvy + rvz * rvz;
+      const shearThickening = 1.0 + Math.min(relSpeedSq * 0.04, 3.0);
+
+      const baseStiff = s.stiffness * (this.stiffnessMultiplier * this.baseStiffnessScale);
+      const baseDamp = s.damping * (this.dampingMultiplier * this.baseDampingScale);
+
+      const effStiff = baseStiff * (1.0 + Math.min(relSpeedSq * 0.015, 1.5));
+      const effDamp = baseDamp * shearThickening;
+
+      const forceMag = effStiff * stretch;
+      const dampF = relSpeedAlongDir * effDamp;
 
       const fx = dirX * (forceMag + dampF);
       const fy = dirY * (forceMag + dampF);
@@ -305,6 +390,69 @@ export class JellyPhysics {
       s.p2.force.x -= fx;
       s.p2.force.y -= fy;
       s.p2.force.z -= fz;
+    }
+
+    // ─── 3D Soft-Body Volume & Pressure Simulation ───────────────────
+    if (this.pressureMultiplier > 0.01 && this.surfaceTriangles.length > 0) {
+      // 1. Calculate signed volume using Gauss' divergence theorem
+      let volumeSum = 0;
+      for (const tri of this.surfaceTriangles) {
+        const p1 = this.particles[tri.i1].position;
+        const p2 = this.particles[tri.i2].position;
+        const p3 = this.particles[tri.i3].position;
+
+        // Scalar triple product: p1 . (p2 x p3)
+        const crossX = p2.y * p3.z - p2.z * p3.y;
+        const crossY = p2.z * p3.x - p2.x * p3.z;
+        const crossZ = p2.x * p3.y - p2.y * p3.x;
+        volumeSum += p1.x * crossX + p1.y * crossY + p1.z * crossZ;
+      }
+      const currentVolume = Math.max(Math.abs(volumeSum) / 6.0, this.restVolume * 0.1);
+
+      // 2. Compute pressure based on ideal volume conservation and inflation setting
+      // Pressure scales inversely with volume (P ~ V0 / V)
+      const volumeRatio = this.restVolume / currentVolume;
+      const kPressure = 80.0 * (5.0 / this.segments) * this.pressureMultiplier;
+      const pressureMagnitude = kPressure * (volumeRatio - 0.2);
+
+      // 3. Apply outward normal pressure forces to surface faces
+      for (const tri of this.surfaceTriangles) {
+        const p1 = this.particles[tri.i1];
+        const p2 = this.particles[tri.i2];
+        const p3 = this.particles[tri.i3];
+
+        const e12x = p2.position.x - p1.position.x;
+        const e12y = p2.position.y - p1.position.y;
+        const e12z = p2.position.z - p1.position.z;
+
+        const e13x = p3.position.x - p1.position.x;
+        const e13y = p3.position.y - p1.position.y;
+        const e13z = p3.position.z - p1.position.z;
+
+        // Normal vector with magnitude equal to 2x triangle area
+        const normX = e12y * e13z - e12z * e13y;
+        const normY = e12z * e13x - e12x * e13z;
+        const normZ = e12x * e13y - e12y * e13x;
+
+        // Force on triangle = Pressure * AreaNormal = Pressure * 0.5 * crossProduct
+        // Each of the 3 vertices receives 1/3 of the triangle force = (1/6) * Pressure * crossProduct
+        const forceFactor = (pressureMagnitude / 6.0);
+        const fx = normX * forceFactor;
+        const fy = normY * forceFactor;
+        const fz = normZ * forceFactor;
+
+        p1.force.x += fx;
+        p1.force.y += fy;
+        p1.force.z += fz;
+
+        p2.force.x += fx;
+        p2.force.y += fy;
+        p2.force.z += fz;
+
+        p3.force.x += fx;
+        p3.force.y += fy;
+        p3.force.z += fz;
+      }
     }
 
     // Drag: position-based — directly move grabbed particles toward target
@@ -339,9 +487,10 @@ export class JellyPhysics {
     // Semi-implicit Euler integration
     const maxSpeed = 40; // velocity clamp to prevent flyaway
     for (const p of this.particles) {
-      const ax = p.force.x * p.invMass;
-      const ay = p.force.y * p.invMass;
-      const az = p.force.z * p.invMass;
+      const invMass = (1.0 / (p.mass * weightMul));
+      const ax = p.force.x * invMass;
+      const ay = p.force.y * invMass;
+      const az = p.force.z * invMass;
 
       p.velocity.x = (p.velocity.x + ax * dt) * this.globalDamping;
       p.velocity.y = (p.velocity.y + ay * dt) * this.globalDamping;
@@ -399,7 +548,7 @@ export class JellyPhysics {
           if (p.velocity.x < -2) playBounceSound(-p.velocity.x);
           p.velocity.x *= -restitution;
         }
-        p.velocity.y *= friction;
+        p.velocity.x *= friction;
         p.velocity.z *= friction;
       }
       // Right Wall (maxX)
@@ -409,7 +558,7 @@ export class JellyPhysics {
           if (p.velocity.x > 2) playBounceSound(p.velocity.x);
           p.velocity.x *= -restitution;
         }
-        p.velocity.y *= friction;
+        p.velocity.x *= friction;
         p.velocity.z *= friction;
       }
     }

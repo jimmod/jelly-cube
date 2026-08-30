@@ -549,10 +549,12 @@ function onUIChange(state: UIState) {
     }
   }
 
-  // Update elasticity, damping, & gravity
+  // Update elasticity, friction, weight, pressure & gravity
   for (const cube of cubes) {
     cube.physics.stiffnessMultiplier = state.elasticity;
-    cube.physics.dampingMultiplier = state.damping;
+    cube.physics.dampingMultiplier = state.friction;
+    cube.physics.weightMultiplier = state.weight;
+    cube.physics.pressureMultiplier = state.pressure;
     // Map 0 -> 0, 5 -> -20, 10 -> -40
     if (!state.tiltGravity) {
       cube.physics.gravity.set(0, - (state.gravity * 4), 0);
