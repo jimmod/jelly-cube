@@ -62,7 +62,8 @@ const normalShader = {
     hasTexture: { value: 0 },
     textureMode: { value: 0 },
     showSpeedHeatmap: { value: 0 },
-    uColor: { value: new THREE.Color('#ff0055') }
+    uColor: { value: new THREE.Color('#ff0055') },
+    uCameraPosition: { value: new THREE.Vector3(0, 4.5, 14) }
   },
   vertexShader: `
     attribute float aSpeed;
@@ -86,6 +87,7 @@ const normalShader = {
     uniform int textureMode;
     uniform int showSpeedHeatmap;
     uniform vec3 uColor;
+    uniform vec3 uCameraPosition;
     
     varying vec3 vNormal;
     varying vec3 vWorldPos;
@@ -142,7 +144,7 @@ const normalShader = {
         float diffuse = max(dot(n, lightDir), 0.0) * 0.3 + 0.7;
         color = baseColor * diffuse;
         
-        vec3 viewDir = normalize(cameraPosition - vWorldPos);
+        vec3 viewDir = normalize(uCameraPosition - vWorldPos);
         float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 2.0);
         color = mix(color, color * 0.5, fresnel * 0.3);
       } else {
@@ -242,6 +244,7 @@ function createJellyCube(segments: number, size: number, offsetX: number): Jelly
     array[base + 2] = p.position.z;
   }
   posAttr.needsUpdate = true;
+  geo.computeVertexNormals();
   geo.computeBoundingSphere();
 
   return {
@@ -870,6 +873,7 @@ function animate() {
     if (uiState.showSpeedHeatmap) speedAttr.needsUpdate = true;
     cube.geo.computeVertexNormals();
     cube.geo.computeBoundingSphere();
+    cube.mat.uniforms.uCameraPosition.value.copy(camera.position);
 
     // Update active debug helpers
     if (uiState.showBox && cube.boxHelper) updateBoxHelper(cube);
