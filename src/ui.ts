@@ -6,10 +6,10 @@ export interface UIState {
   resolution: Resolution;
   cubeCount: number;
   cubeSize: number; // 0.5 to 5.0, default 3.0
-  elasticity: number; // 0.1 (soft) to 3.0 (stiff), default 2.0 (Jello)
-  friction: number; // 0.1 (gelatinous wiggle) to 5.0 (muddy lag), default 1.0
+  elasticity: number; // 0.0 to 3.0, default 1.4 (Classic Gelatin)
+  friction: number; // 0.1 (gelatinous wiggle) to 5.0 (muddy lag), default 0.3
   weight: number; // 0.2 (light) to 3.0 (heavy inertia), default 1.0
-  pressure: number; // 0.0 (deflated sack) to 3.0 (plump rigid ball), default 1.2
+  pressure: number; // -2.0 (vacuum implosion) to 3.0 (plump rigid ball), default 0.8
   gravity: number; // 0 (float) to 10 (fast fall), default 5
   tiltGravity: boolean;
   textureMode: 'default' | 'rainbow' | 'color' | 'file';
@@ -37,10 +37,10 @@ export function createUI(onChange: UIChangeCallback): UIState {
     resolution: 'medium',
     cubeCount: 1,
     cubeSize: 3.0,
-    elasticity: 2.0, // Default to Jello physics
-    friction: 1.0,
+    elasticity: 1.4, // Default to Classic Gelatin
+    friction: 0.3,
     weight: 1.0,
-    pressure: 1.2,
+    pressure: 0.8,
     gravity: 5,
     tiltGravity: false,
     textureMode: 'default',
@@ -100,8 +100,9 @@ export function createUI(onChange: UIChangeCallback): UIState {
   // ── Material Presets ────────────────────────────────────────────
   const presetsGroup = createGroup('Presets');
   const presetsContainer = document.createElement('div');
-  presetsContainer.style.display = 'flex';
-  presetsContainer.style.gap = '8px';
+  presetsContainer.style.display = 'grid';
+  presetsContainer.style.gridTemplateColumns = 'repeat(2, 1fr)';
+  presetsContainer.style.gap = '6px';
   presetsContainer.style.marginTop = '4px';
 
   // Slider references to update when a preset button is clicked
@@ -113,14 +114,27 @@ export function createUI(onChange: UIChangeCallback): UIState {
   const createPresetBtn = (label: string, elasticity: number, friction: number, weight: number, pressure: number) => {
     const btn = document.createElement('button');
     btn.textContent = label;
-    btn.style.flex = '1';
-    btn.style.padding = '4px';
-    btn.style.fontSize = '12px';
+    btn.style.padding = '6px 4px';
+    btn.style.fontSize = '11px';
+    btn.style.fontWeight = '500';
     btn.style.cursor = 'pointer';
-    btn.style.background = 'rgba(255, 255, 255, 0.1)';
-    btn.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    btn.style.background = 'rgba(255, 255, 255, 0.08)';
+    btn.style.border = '1px solid rgba(255, 255, 255, 0.16)';
     btn.style.color = '#fff';
-    btn.style.borderRadius = '4px';
+    btn.style.borderRadius = '6px';
+    btn.style.whiteSpace = 'nowrap';
+    btn.style.overflow = 'hidden';
+    btn.style.textOverflow = 'ellipsis';
+    btn.style.transition = 'background 0.15s, border-color 0.15s';
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(255, 255, 255, 0.18)';
+      btn.style.borderColor = 'rgba(255, 255, 255, 0.35)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(255, 255, 255, 0.08)';
+      btn.style.borderColor = 'rgba(255, 255, 255, 0.16)';
+    });
+
     btn.addEventListener('click', () => {
       state.elasticity = elasticity;
       state.friction = friction;
@@ -148,11 +162,13 @@ export function createUI(onChange: UIChangeCallback): UIState {
     return btn;
   };
 
-  // Preset Configurations based on physical rules
-  presetsContainer.appendChild(createPresetBtn('🍮 Jello', 2.0, 1.0, 1.0, 1.2));
-  presetsContainer.appendChild(createPresetBtn('💧 Water', 0.3, 0.5, 1.5, 2.5));
-  presetsContainer.appendChild(createPresetBtn('🍯 Slime', 0.4, 2.0, 1.2, 0.8));
-  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.1, 3.5, 2.0, 0.0));
+  // 6 Material Presets conforming to physical rules
+  presetsContainer.appendChild(createPresetBtn('🍮 Classic Gelatin', 1.4, 0.3, 1.0, 0.8));
+  presetsContainer.appendChild(createPresetBtn('🛡️ Heavy Rubber', 2.6, 3.0, 2.5, 2.5));
+  presetsContainer.appendChild(createPresetBtn('🎈 Water Balloon', 0.2, 0.15, 1.6, 2.2));
+  presetsContainer.appendChild(createPresetBtn('🧴 Memory Foam', 0.05, 4.5, 1.0, 0.0));
+  presetsContainer.appendChild(createPresetBtn('💨 Marshmallow', 1.8, 0.8, 0.3, 0.4));
+  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.1, 5.0, 3.0, -1.5));
   
   presetsGroup.appendChild(presetsContainer);
   body.appendChild(presetsGroup);
@@ -167,7 +183,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
   bounceSlider = document.createElement('input');
   bounceSlider.type = 'range';
   bounceSlider.id = 'bounce-slider';
-  bounceSlider.min = '0.1';
+  bounceSlider.min = '0.0';
   bounceSlider.max = '3.0';
   bounceSlider.step = '0.1';
   bounceSlider.value = String(state.elasticity);
@@ -239,7 +255,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
   pressureSlider = document.createElement('input');
   pressureSlider.type = 'range';
   pressureSlider.id = 'pressure-slider';
-  pressureSlider.min = '0.0';
+  pressureSlider.min = '-2.0';
   pressureSlider.max = '3.0';
   pressureSlider.step = '0.1';
   pressureSlider.value = String(state.pressure);

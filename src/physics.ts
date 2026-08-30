@@ -79,29 +79,28 @@ export interface DragInfo {
   offset: THREE.Vector3; // offset from drag center at time of grab
 }
 
-export interface SurfaceTriangle {
+export interface BoundaryEdge {
   i1: number;
   i2: number;
-  i3: number;
 }
 
 export class JellyPhysics {
   particles: Particle[] = [];
   springs: Spring[] = [];
-  surfaceTriangles: SurfaceTriangle[] = [];
+  boundaryEdges: BoundaryEdge[] = [];
   gravity: THREE.Vector3 = new THREE.Vector3(0, -20, 0);
   floorY = 0;
   globalDamping = 0.998;
   segments: number;
   size: number = 3.0;
-  restVolume: number = 27.0;
+  restArea: number = 9.0;
   substepsPerUpdate: number;
 
   // Physical parameters exposed to UI
-  stiffnessMultiplier = 1.0; // Elasticity: return spring stiffness
-  dampingMultiplier = 1.0;   // Friction / Viscosity: damping factor
+  stiffnessMultiplier = 1.4; // Elasticity: return spring stiffness
+  dampingMultiplier = 0.4;   // Friction / Viscosity: damping factor
   weightMultiplier = 1.0;    // Weight / Mass: inertia scaling
-  pressureMultiplier = 1.0;  // Pressure: internal air/fluid volume pressure
+  pressureMultiplier = 1.0;  // Pressure: internal volume/area conservation
 
   // Internal multipliers to keep high resolutions stable at low substeps
   private baseStiffnessScale = 1.0;
@@ -116,15 +115,14 @@ export class JellyPhysics {
   constructor(segments: number, size: number) {
     this.segments = segments;
     this.size = size;
-    this.restVolume = size * size * size;
+    this.restArea = size * size;
 
     // Cap substeps at 4 for massive performance boost on mobile at High resolutions
     this.substepsPerUpdate = segments <= 3 ? 1 : segments <= 5 ? 2 : 4;
     
-    // As resolution (n) increases, particle mass decreases as O(1/n^3) while spring stiffness 
-    // needs to scale up, making the system highly stiff and prone to explosion at low substeps.
+    // Scale down stiffness at high resolutions to maintain numerical stability
     if (segments >= 8) {
-      this.baseStiffnessScale = 0.5; // Aggressive scale down
+      this.baseStiffnessScale = 0.5;
       this.baseDampingScale = 2.0;
     }
     this.init(segments, size);
@@ -133,10 +131,10 @@ export class JellyPhysics {
   init(segments: number, size: number) {
     this.segments = segments;
     this.size = size;
-    this.restVolume = size * size * size;
+    this.restArea = size * size;
     this.particles = [];
     this.springs = [];
-    this.surfaceTriangles = [];
+    this.boundaryEdges = [];
 
     const n = segments + 1;
     const halfSize = size / 2.0;
@@ -161,62 +159,28 @@ export class JellyPhysics {
     // Index helper
     const idx = (x: number, y: number, z: number) => z * n * n + y * n + x;
 
-    // ─── Surface Triangles Generation (for 3D Volume & Internal Pressure) ──
-    for (let iy = 0; iy < segments; iy++) {
+    // ─── 2D Perimeter Boundary Loop Generation (for XY Volume/Pressure) ──
+    for (let iz = 0; iz < n; iz++) {
+      // 1. Bottom edge (left to right): (ix, 0) -> (ix+1, 0), outward normal (0, -1)
       for (let ix = 0; ix < segments; ix++) {
-        // Front Face (+Z, normal (0, 0, 1))
-        const f00 = idx(ix, iy, n - 1);
-        const f10 = idx(ix + 1, iy, n - 1);
-        const f11 = idx(ix + 1, iy + 1, n - 1);
-        const f01 = idx(ix, iy + 1, n - 1);
-        this.surfaceTriangles.push({ i1: f00, i2: f10, i3: f11 });
-        this.surfaceTriangles.push({ i1: f00, i2: f11, i3: f01 });
-
-        // Back Face (-Z, normal (0, 0, -1))
-        const b00 = idx(ix, iy, 0);
-        const b10 = idx(ix + 1, iy, 0);
-        const b11 = idx(ix + 1, iy + 1, 0);
-        const b01 = idx(ix, iy + 1, 0);
-        this.surfaceTriangles.push({ i1: b00, i2: b11, i3: b10 });
-        this.surfaceTriangles.push({ i1: b00, i2: b01, i3: b11 });
-
-        // Top Face (+Y, normal (0, 1, 0))
-        const t00 = idx(ix, n - 1, iy);
-        const t10 = idx(ix + 1, n - 1, iy);
-        const t11 = idx(ix + 1, n - 1, iy + 1);
-        const t01 = idx(ix, n - 1, iy + 1);
-        this.surfaceTriangles.push({ i1: t00, i2: t11, i3: t10 });
-        this.surfaceTriangles.push({ i1: t00, i2: t01, i3: t11 });
-
-        // Bottom Face (-Y, normal (0, -1, 0))
-        const bot00 = idx(ix, 0, iy);
-        const bot10 = idx(ix + 1, 0, iy);
-        const bot11 = idx(ix + 1, 0, iy + 1);
-        const bot01 = idx(ix, 0, iy + 1);
-        this.surfaceTriangles.push({ i1: bot00, i2: bot10, i3: bot11 });
-        this.surfaceTriangles.push({ i1: bot00, i2: bot11, i3: bot01 });
-
-        // Right Face (+X, normal (1, 0, 0))
-        const r00 = idx(n - 1, ix, iy);
-        const r10 = idx(n - 1, ix, iy + 1);
-        const r11 = idx(n - 1, ix + 1, iy + 1);
-        const r01 = idx(n - 1, ix + 1, iy);
-        this.surfaceTriangles.push({ i1: r00, i2: r11, i3: r10 });
-        this.surfaceTriangles.push({ i1: r00, i2: r01, i3: r11 });
-
-        // Left Face (-X, normal (-1, 0, 0))
-        const l00 = idx(0, ix, iy);
-        const l10 = idx(0, ix, iy + 1);
-        const l11 = idx(0, ix + 1, iy + 1);
-        const l01 = idx(0, ix + 1, iy);
-        this.surfaceTriangles.push({ i1: l00, i2: l10, i3: l11 });
-        this.surfaceTriangles.push({ i1: l00, i2: l11, i3: l01 });
+        this.boundaryEdges.push({ i1: idx(ix, 0, iz), i2: idx(ix + 1, 0, iz) });
+      }
+      // 2. Right edge (bottom to top): (n-1, iy) -> (n-1, iy+1), outward normal (1, 0)
+      for (let iy = 0; iy < segments; iy++) {
+        this.boundaryEdges.push({ i1: idx(n - 1, iy, iz), i2: idx(n - 1, iy + 1, iz) });
+      }
+      // 3. Top edge (right to left): (ix+1, n-1) -> (ix, n-1), outward normal (0, 1)
+      for (let ix = segments - 1; ix >= 0; ix--) {
+        this.boundaryEdges.push({ i1: idx(ix + 1, n - 1, iz), i2: idx(ix, n - 1, iz) });
+      }
+      // 4. Left edge (top to bottom): (0, iy+1) -> (0, iy), outward normal (-1, 0)
+      for (let iy = segments - 1; iy >= 0; iy--) {
+        this.boundaryEdges.push({ i1: idx(0, iy + 1, iz), i2: idx(0, iy, iz) });
       }
     }
 
     // Spring stiffness: scale inversely with segments so material properties
-    // remain consistent across different resolutions. (Area / Length = 1/N)
-    // Base values calibrated for Medium (segments=5).
+    // remain consistent across different resolutions.
     const stiffness = 300 * (5 / segments);
     const damping = 5 * (5 / segments);
 
@@ -320,14 +284,11 @@ export class JellyPhysics {
   }
 
   update(dt: number) {
-    // Dynamically increase substeps if the jelly is very stiff (like the Jello preset)
-    // to prevent numerical oscillation at high resolutions.
     let currentSubsteps = this.substepsPerUpdate;
     if (this.segments >= 8 && this.stiffnessMultiplier > 1.2) {
       currentSubsteps = 6;
     }
 
-    // Subdivide the timestep for stability at high resolutions
     const subDt = dt / currentSubsteps;
 
     for (let sub = 0; sub < currentSubsteps; sub++) {
@@ -337,6 +298,7 @@ export class JellyPhysics {
 
   private _substep(dt: number) {
     const weightMul = Math.max(0.1, this.weightMultiplier);
+    const n = this.segments + 1;
 
     // Reset forces, apply gravity scaled by particle mass and weightMultiplier
     for (const p of this.particles) {
@@ -365,8 +327,8 @@ export class JellyPhysics {
       const rvz = s.p2.velocity.z - s.p1.velocity.z;
       const relSpeedAlongDir = rvx * dirX + rvy * dirY + rvz * dirZ;
 
-      // Non-Newtonian shear-thickening for Slime / dense fluids:
-      // High relative speed (sudden pressure/impact) causes molecules to lock, increasing resistance
+      // Non-Newtonian shear-thickening:
+      // High relative speed (sudden pressure/impact) increases resistance
       const relSpeedSq = rvx * rvx + rvy * rvy + rvz * rvz;
       const shearThickening = 1.0 + Math.min(relSpeedSq * 0.04, 3.0);
 
@@ -392,71 +354,70 @@ export class JellyPhysics {
       s.p2.force.z -= fz;
     }
 
-    // ─── 3D Soft-Body Volume & Pressure Simulation ───────────────────
-    if (this.pressureMultiplier > 0.01 && this.surfaceTriangles.length > 0) {
-      // 1. Calculate signed volume using Gauss' divergence theorem
-      let volumeSum = 0;
-      for (const tri of this.surfaceTriangles) {
-        const p1 = this.particles[tri.i1].position;
-        const p2 = this.particles[tri.i2].position;
-        const p3 = this.particles[tri.i3].position;
-
-        // Scalar triple product: p1 . (p2 x p3)
-        const crossX = p2.y * p3.z - p2.z * p3.y;
-        const crossY = p2.z * p3.x - p2.x * p3.z;
-        const crossZ = p2.x * p3.y - p2.y * p3.x;
-        volumeSum += p1.x * crossX + p1.y * crossY + p1.z * crossZ;
+    // ─── 2D Perimeter Volume & Internal Pressure Simulation ────────
+    if (Math.abs(this.pressureMultiplier) > 0.01 && this.boundaryEdges.length > 0) {
+      // 1. Calculate signed 2D area across all Z layers
+      let areaSum = 0;
+      for (const edge of this.boundaryEdges) {
+        const p1 = this.particles[edge.i1].position;
+        const p2 = this.particles[edge.i2].position;
+        areaSum += p1.x * p2.y - p2.x * p1.y;
       }
-      const currentVolume = Math.max(Math.abs(volumeSum) / 6.0, this.restVolume * 0.1);
+      const currentArea = Math.max(areaSum / (2.0 * n), this.restArea * 0.05);
 
-      // 2. Compute pressure based on ideal volume conservation and inflation setting
-      // Pressure scales inversely with volume (P ~ V0 / V)
-      const volumeRatio = this.restVolume / currentVolume;
-      const kPressure = 80.0 * (5.0 / this.segments) * this.pressureMultiplier;
-      const pressureMagnitude = kPressure * (volumeRatio - 0.2);
+      // 2. Pressure computation:
+      // At rest shape, currentArea == restArea -> (restArea/currentArea - 1) == 0 -> P = 0 (No self-crush).
+      // Under compression, currentArea < restArea -> P > 0 pushes outward.
+      // Negative pressure (< 0) causes inward vacuum implosion (Crushed preset).
+      const areaRatio = (this.restArea / currentArea) - 1.0;
+      const kPressure = 150.0 * (5.0 / this.segments);
 
-      // 3. Apply outward normal pressure forces to surface faces
-      for (const tri of this.surfaceTriangles) {
-        const p1 = this.particles[tri.i1];
-        const p2 = this.particles[tri.i2];
-        const p3 = this.particles[tri.i3];
+      let pressureVal = 0;
+      if (this.pressureMultiplier >= 0) {
+        pressureVal = this.pressureMultiplier * kPressure * areaRatio;
+      } else {
+        // Negative / Vacuum pressure for Crushed collapse
+        pressureVal = this.pressureMultiplier * kPressure * 1.5;
+      }
 
-        const e12x = p2.position.x - p1.position.x;
-        const e12y = p2.position.y - p1.position.y;
-        const e12z = p2.position.z - p1.position.z;
+      // 3. Apply outward normal forces on boundary edges
+      for (const edge of this.boundaryEdges) {
+        const p1 = this.particles[edge.i1];
+        const p2 = this.particles[edge.i2];
 
-        const e13x = p3.position.x - p1.position.x;
-        const e13y = p3.position.y - p1.position.y;
-        const e13z = p3.position.z - p1.position.z;
+        const dx = p2.position.x - p1.position.x;
+        const dy = p2.position.y - p1.position.y;
 
-        // Normal vector with magnitude equal to 2x triangle area
-        const normX = e12y * e13z - e12z * e13y;
-        const normY = e12z * e13x - e12x * e13z;
-        const normZ = e12x * e13y - e12y * e13x;
-
-        // Force on triangle = Pressure * AreaNormal = Pressure * 0.5 * crossProduct
-        // Each of the 3 vertices receives 1/3 of the triangle force = (1/6) * Pressure * crossProduct
-        const forceFactor = (pressureMagnitude / 6.0);
-        const fx = normX * forceFactor;
-        const fy = normY * forceFactor;
-        const fz = normZ * forceFactor;
+        // Outward normal in counter-clockwise winding: (dy, -dx)
+        const fx = dy * pressureVal * 0.5;
+        const fy = -dx * pressureVal * 0.5;
 
         p1.force.x += fx;
         p1.force.y += fy;
-        p1.force.z += fz;
 
         p2.force.x += fx;
         p2.force.y += fy;
-        p2.force.z += fz;
+      }
 
-        p3.force.x += fx;
-        p3.force.y += fy;
-        p3.force.z += fz;
+      // 4. Central gravitational suction for Crushed preset
+      if (this.pressureMultiplier < -0.1) {
+        let avgX = 0, avgY = 0;
+        for (const p of this.particles) {
+          avgX += p.position.x;
+          avgY += p.position.y;
+        }
+        avgX /= this.particles.length;
+        avgY /= this.particles.length;
+
+        const suction = -this.pressureMultiplier * 450.0;
+        for (const p of this.particles) {
+          p.force.x += (avgX - p.position.x) * suction;
+          p.force.y += (avgY - p.position.y) * suction;
+        }
       }
     }
 
     // Drag: position-based — directly move grabbed particles toward target
-    // Scale strength inversely with substeps so total impulse per frame is consistent
     if (this.activeDrags.size > 0) {
       const baseStrength = 500 / this.substepsPerUpdate;
       const dampFactor = this.substepsPerUpdate <= 2 ? 0.88 : 0.80;
@@ -465,7 +426,6 @@ export class JellyPhysics {
         for (const info of drag.particles) {
           const p = this.particles[info.particleIndex];
 
-          // Target position for this particle = dragTarget + original offset * (1-weight)
           const lerpW = info.weight;
           const targetX = drag.target.x + info.offset.x * (1 - lerpW);
           const targetY = drag.target.y + info.offset.y * (1 - lerpW);
@@ -476,7 +436,6 @@ export class JellyPhysics {
           p.force.y += (targetY - p.position.y) * strength;
           p.force.z += (targetZ - p.position.z) * strength;
 
-          // Damping on dragged particles — stronger for more substeps
           p.velocity.x *= dampFactor;
           p.velocity.y *= dampFactor;
           p.velocity.z *= dampFactor;

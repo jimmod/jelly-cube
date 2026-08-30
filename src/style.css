@@ -63,7 +63,7 @@ canvas {
 
 /* ── Panel body ──────────────────────────────────────────────────── */
 #panel-body {
-  width: 220px;
+  width: 236px;
   background: rgba(20, 20, 30, 0.65);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
