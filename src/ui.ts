@@ -18,6 +18,10 @@ export interface UIState {
   soundEnabled: boolean;
   showBox: boolean;
   showVelocity: boolean;
+  showStress: boolean;
+  showTrajectory: boolean;
+  showSpeedHeatmap: boolean;
+  showStats: boolean;
 }
 
 export type UIChangeCallback = (state: UIState) => void;
@@ -49,6 +53,10 @@ export function createUI(onChange: UIChangeCallback): UIState {
     soundEnabled: false,
     showBox: false,
     showVelocity: false,
+    showStress: false,
+    showTrajectory: false,
+    showSpeedHeatmap: false,
+    showStats: false,
   };
 
   // ── Panel container ─────────────────────────────────────────────
@@ -488,6 +496,50 @@ export function createUI(onChange: UIChangeCallback): UIState {
     }
   );
   debugAccordion.content.appendChild(velToggle);
+
+  const stressToggle = createToggle(
+    'Stress (FEA)',
+    state.showStress,
+    'Color-codes internal lattice springs in real time: Red for tension/stretching and Blue for compression/squishing.',
+    (val) => {
+      state.showStress = val;
+      onChange({ ...state });
+    }
+  );
+  debugAccordion.content.appendChild(stressToggle);
+
+  const trajToggle = createToggle(
+    'Trajectory',
+    state.showTrajectory,
+    'Renders a glowing center of mass node with an animated flight path trail.',
+    (val) => {
+      state.showTrajectory = val;
+      onChange({ ...state });
+    }
+  );
+  debugAccordion.content.appendChild(trajToggle);
+
+  const speedToggle = createToggle(
+    'Speed Heatmap',
+    state.showSpeedHeatmap,
+    'Colors the 3D surface based on kinetic velocity (cool blue = resting, blazing red = high speed).',
+    (val) => {
+      state.showSpeedHeatmap = val;
+      onChange({ ...state });
+    }
+  );
+  debugAccordion.content.appendChild(speedToggle);
+
+  const statsToggle = createToggle(
+    'Stats HUD',
+    state.showStats,
+    'Displays real-time FPS, frame latency, particle count, spring count, and volume ratio.',
+    (val) => {
+      state.showStats = val;
+      onChange({ ...state });
+    }
+  );
+  debugAccordion.content.appendChild(statsToggle);
 
   body.appendChild(debugAccordion.container);
 

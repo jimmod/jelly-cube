@@ -471,6 +471,53 @@ input[type=range]::-moz-range-thumb {
   font-size: 11px;
 }
 
+/* ── Physics Stats HUD ────────────────────────────────────────────── */
+#physics-stats-hud {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 100;
+  padding: 10px 14px;
+  background: rgba(15, 18, 30, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.9);
+  font-family: 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  user-select: none;
+  display: none;
+}
+
+#physics-stats-hud.show {
+  display: block;
+  animation: hudFadeIn 0.2s ease;
+}
+
+@keyframes hudFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.stats-label {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.stats-val {
+  color: #60a5fa;
+  font-weight: 600;
+}
+
 /* ── Responsive ───────────────────────────────────────────────────── */
 @media (max-width: 480px) {
   #panel-body {
@@ -481,5 +528,12 @@ input[type=range]::-moz-range-thumb {
   #control-panel {
     top: 10px;
     right: 10px;
+  }
+
+  #physics-stats-hud {
+    bottom: 10px;
+    left: 10px;
+    font-size: 10px;
+    padding: 8px 10px;
   }
 }
