@@ -28,6 +28,6 @@
 - **Settings**: Elasticity `1.8×`, Friction `0.7×`, Weight `0.5×`, Pressure `0.5×`
 - **Behavior**: Light, soft, bouncy, and highly compressible. Bounces like a beach ball and pops back to full size without heavy lagging inertia.
 
-### 6. 💥 Crushed (The Black Hole Collapse)
-- **Settings**: Elasticity `0.1×`, Friction `5.0×`, Weight `3.0×`, Pressure `-1.5×`
-- **Behavior**: Total structural collapse. The moment this preset is activated, the cube violently implodes with internal vacuum suction into a dense crumpled core.
+### 💥 6. Crushed (The Squished Lump)
+- **Settings**: Elasticity Low (`0.4×`), Friction High (`3.5×`), Weight Medium-High (`1.8×`), Pressure Negative / Vacuum (`-0.6×`).
+- **Behavior**: Satisfyingly crumpled and squished block. Inward vacuum suction gently pulls the cube into a dense, flattened puck (~45% rest volume) with heavy viscous damping, resisting outward bounce without collapsing into a microscopic point.

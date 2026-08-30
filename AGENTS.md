@@ -38,6 +38,6 @@ These rules define the physical simulation behavior, material presets, and param
 - **Settings**: Elasticity Medium-High (`1.8×`), Friction Medium (`0.7×`), Weight Low (`0.5×`), Pressure Low (`0.5×`).
 - **Behavior**: Light, soft, bouncy, and highly compressible. Bounces around like a beach ball, squishes effortlessly under pressure, and instantly pops back to full size without heavy lagging weight.
 
-### 💥 6. Crushed (The Black Hole Collapse)
-- **Settings**: Elasticity Minimal (`0.1×`), Friction Maximized (`5.0×`), Weight Extremely High (`3.0×`), Pressure Negative / Vacuum (`-1.5×`).
-- **Behavior**: Total structural collapse. The moment this preset is activated, the cube violently implodes with inward vacuum suction, crumpling into a dense, heavily distorted clump resisting any outward bounce.
+### 💥 6. Crushed (The Squished Lump)
+- **Settings**: Elasticity Low (`0.4×`), Friction High (`3.5×`), Weight Medium-High (`1.8×`), Pressure Negative / Vacuum (`-0.6×`).
+- **Behavior**: Satisfyingly crumpled and squished block. Inward vacuum suction gently pulls the cube into a dense, flattened puck (~45% rest volume) with heavy viscous damping, resisting outward bounce without collapsing into a microscopic point.

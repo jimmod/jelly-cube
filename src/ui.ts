@@ -190,7 +190,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
   presetsContainer.appendChild(createPresetBtn('🎈 Balloon', 0.3, 0.2, 1.5, 1.8));
   presetsContainer.appendChild(createPresetBtn('🧴 Foam', 0.35, 4.2, 1.2, 0.3));
   presetsContainer.appendChild(createPresetBtn('💨 Marshmallow', 1.8, 0.7, 0.5, 0.5));
-  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.1, 5.0, 3.0, -1.5));
+  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.4, 3.5, 1.8, -0.6));
   
   presetsGroup.appendChild(presetsContainer);
   body.appendChild(presetsGroup);

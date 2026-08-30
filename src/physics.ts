@@ -376,8 +376,11 @@ export class JellyPhysics {
       if (this.pressureMultiplier >= 0) {
         pressureVal = this.pressureMultiplier * kPressure * areaStrain;
       } else {
-        // Negative / Vacuum pressure for Crushed collapse
-        pressureVal = this.pressureMultiplier * kPressure * 1.5;
+        // Negative / Vacuum pressure for Crushed collapse with a stable equilibrium volume (~45% rest area)
+        const crushTargetRatio = 0.45;
+        const currentRatio = Math.max(0, currentArea / this.restArea);
+        const crushStrain = Math.max(0, currentRatio - crushTargetRatio);
+        pressureVal = this.pressureMultiplier * kPressure * (crushStrain + 0.2);
       }
 
       // 3. Apply outward normal forces on boundary edges
