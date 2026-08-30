@@ -98,9 +98,9 @@ export class JellyPhysics {
 
   // Physical parameters exposed to UI
   stiffnessMultiplier = 1.4; // Elasticity: return spring stiffness
-  dampingMultiplier = 0.4;   // Friction / Viscosity: damping factor
+  dampingMultiplier = 0.3;   // Friction / Viscosity: damping factor
   weightMultiplier = 1.0;    // Weight / Mass: inertia scaling
-  pressureMultiplier = 1.0;  // Pressure: internal volume/area conservation
+  pressureMultiplier = 0.8;  // Pressure: internal volume/area conservation
 
   // Internal multipliers to keep high resolutions stable at low substeps
   private baseStiffnessScale = 1.0;
@@ -117,13 +117,12 @@ export class JellyPhysics {
     this.size = size;
     this.restArea = size * size;
 
-    // Cap substeps at 4 for massive performance boost on mobile at High resolutions
-    this.substepsPerUpdate = segments <= 3 ? 1 : segments <= 5 ? 2 : 4;
+    this.substepsPerUpdate = segments <= 3 ? 2 : segments <= 5 ? 4 : 6;
     
     // Scale down stiffness at high resolutions to maintain numerical stability
     if (segments >= 8) {
       this.baseStiffnessScale = 0.5;
-      this.baseDampingScale = 2.0;
+      this.baseDampingScale = 1.8;
     }
     this.init(segments, size);
   }
@@ -181,8 +180,8 @@ export class JellyPhysics {
 
     // Spring stiffness: scale inversely with segments so material properties
     // remain consistent across different resolutions.
-    const stiffness = 300 * (5 / segments);
-    const damping = 5 * (5 / segments);
+    const stiffness = 280 * (5 / segments);
+    const damping = 4.5 * (5 / segments);
 
     // Create springs — structural, shear, and bend
     for (let iz = 0; iz < n; iz++) {
@@ -284,9 +283,16 @@ export class JellyPhysics {
   }
 
   update(dt: number) {
+    // Dynamically calculate required substeps based on effective stiffness / mass ratio
+    const weightMul = Math.max(0.1, this.weightMultiplier);
+    const effectiveStiffnessRatio = this.stiffnessMultiplier / weightMul;
+
     let currentSubsteps = this.substepsPerUpdate;
-    if (this.segments >= 8 && this.stiffnessMultiplier > 1.2) {
-      currentSubsteps = 6;
+    if (effectiveStiffnessRatio > 2.5 || this.segments >= 8) {
+      currentSubsteps = Math.max(currentSubsteps, 4);
+    }
+    if (effectiveStiffnessRatio > 5.0) {
+      currentSubsteps = Math.max(currentSubsteps, 6);
     }
 
     const subDt = dt / currentSubsteps;
@@ -330,13 +336,13 @@ export class JellyPhysics {
       // Non-Newtonian shear-thickening:
       // High relative speed (sudden pressure/impact) increases resistance
       const relSpeedSq = rvx * rvx + rvy * rvy + rvz * rvz;
-      const shearThickening = 1.0 + Math.min(relSpeedSq * 0.04, 3.0);
+      const shearThickening = 1.0 + Math.min(relSpeedSq * 0.04, 2.5);
 
       const baseStiff = s.stiffness * (this.stiffnessMultiplier * this.baseStiffnessScale);
       const baseDamp = s.damping * (this.dampingMultiplier * this.baseDampingScale);
 
-      const effStiff = baseStiff * (1.0 + Math.min(relSpeedSq * 0.015, 1.5));
-      const effDamp = baseDamp * shearThickening;
+      const effStiff = baseStiff * (1.0 + Math.min(relSpeedSq * 0.01, 1.2));
+      const effDamp = Math.min(baseDamp * shearThickening, 25.0);
 
       const forceMag = effStiff * stretch;
       const dampF = relSpeedAlongDir * effDamp;
@@ -363,18 +369,18 @@ export class JellyPhysics {
         const p2 = this.particles[edge.i2].position;
         areaSum += p1.x * p2.y - p2.x * p1.y;
       }
-      const currentArea = Math.max(areaSum / (2.0 * n), this.restArea * 0.05);
+      const currentArea = areaSum / (2.0 * n);
 
-      // 2. Pressure computation:
-      // At rest shape, currentArea == restArea -> (restArea/currentArea - 1) == 0 -> P = 0 (No self-crush).
-      // Under compression, currentArea < restArea -> P > 0 pushes outward.
+      // 2. Linear Hookean area strain (singularity-free, bounded):
+      // At rest shape, currentArea == restArea -> strain = 0 -> Pressure = 0 (No self-crush).
+      // Under compression, currentArea < restArea -> strain > 0 -> P > 0 pushes outward.
       // Negative pressure (< 0) causes inward vacuum implosion (Crushed preset).
-      const areaRatio = (this.restArea / currentArea) - 1.0;
-      const kPressure = 150.0 * (5.0 / this.segments);
+      const areaStrain = Math.max(-1.5, Math.min(1.5, (this.restArea - currentArea) / this.restArea));
+      const kPressure = 90.0 * (5.0 / this.segments);
 
       let pressureVal = 0;
       if (this.pressureMultiplier >= 0) {
-        pressureVal = this.pressureMultiplier * kPressure * areaRatio;
+        pressureVal = this.pressureMultiplier * kPressure * areaStrain;
       } else {
         // Negative / Vacuum pressure for Crushed collapse
         pressureVal = this.pressureMultiplier * kPressure * 1.5;
@@ -409,7 +415,7 @@ export class JellyPhysics {
         avgX /= this.particles.length;
         avgY /= this.particles.length;
 
-        const suction = -this.pressureMultiplier * 450.0;
+        const suction = -this.pressureMultiplier * 350.0;
         for (const p of this.particles) {
           p.force.x += (avgX - p.position.x) * suction;
           p.force.y += (avgY - p.position.y) * suction;
@@ -417,7 +423,7 @@ export class JellyPhysics {
       }
     }
 
-    // Drag: position-based — directly move grabbed particles toward target
+    // Drag: mass-normalized drag force so all weights (0.3x to 2.5x) are smoothly draggable
     if (this.activeDrags.size > 0) {
       const baseStrength = 500 / this.substepsPerUpdate;
       const dampFactor = this.substepsPerUpdate <= 2 ? 0.88 : 0.80;
@@ -425,13 +431,14 @@ export class JellyPhysics {
       for (const drag of this.activeDrags.values()) {
         for (const info of drag.particles) {
           const p = this.particles[info.particleIndex];
+          const pMass = p.mass * weightMul;
 
           const lerpW = info.weight;
           const targetX = drag.target.x + info.offset.x * (1 - lerpW);
           const targetY = drag.target.y + info.offset.y * (1 - lerpW);
           const targetZ = drag.target.z + info.offset.z * (1 - lerpW);
 
-          const strength = baseStrength * info.weight;
+          const strength = baseStrength * info.weight * (pMass * 3.5);
           p.force.x += (targetX - p.position.x) * strength;
           p.force.y += (targetY - p.position.y) * strength;
           p.force.z += (targetZ - p.position.z) * strength;
