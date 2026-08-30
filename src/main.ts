@@ -22,11 +22,11 @@ renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
 // ─── Lighting ────────────────────────────────────────────────────────────────
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
-dirLight.position.set(5, 12, 8);
+const dirLight = new THREE.DirectionalLight(0xffeedd, 1.4);
+dirLight.position.set(6, 12, 8);
 dirLight.castShadow = true;
 dirLight.shadow.mapSize.width = 1024;
 dirLight.shadow.mapSize.height = 1024;
@@ -36,127 +36,55 @@ dirLight.shadow.camera.left = -10;
 dirLight.shadow.camera.right = 10;
 dirLight.shadow.camera.top = 10;
 dirLight.shadow.camera.bottom = -10;
-dirLight.shadow.bias = -0.002;
+dirLight.shadow.bias = -0.001;
 scene.add(dirLight);
 
-const fillLight = new THREE.DirectionalLight(0x8888ff, 0.4);
-fillLight.position.set(-5, 5, -5);
+const fillLight = new THREE.DirectionalLight(0x60a5fa, 0.6);
+fillLight.position.set(-6, 6, -5);
 scene.add(fillLight);
 
 // ─── Invisible floor (for shadow only) ──────────────────────────────────────
 const floorGeo = new THREE.PlaneGeometry(80, 80);
-const floorMat = new THREE.ShadowMaterial({ opacity: 0.15 });
+const floorMat = new THREE.ShadowMaterial({ opacity: 0.25 });
 const floor = new THREE.Mesh(floorGeo, floorMat);
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-// ─── 1x1 Dummy Fallback Texture (Ensures sampler2D is always valid) ─────────
-const dummyTexture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
-dummyTexture.needsUpdate = true;
+// ─── Texture Cache ──────────────────────────────────────────────────────────
+let loadedFileTexture: THREE.Texture | null = null;
 
-// ─── Normal-color & Speed Heatmap Shader ────────────────────────────────────
-const normalShader = {
-  uniforms: {
-    tDiffuse: { value: dummyTexture },
-    hasTexture: { value: 0 },
-    textureMode: { value: 0 },
-    showSpeedHeatmap: { value: 0 },
-    uColor: { value: new THREE.Color('#ff0055') },
-    uCameraPosition: { value: new THREE.Vector3(0, 4.5, 14) }
-  },
-  vertexShader: `
-    attribute float aSpeed;
-    varying vec3 vNormal;
-    varying vec3 vWorldPos;
-    varying vec2 vUv;
-    varying float vSpeed;
+// ─── Material Generator (100% Robust Standard Three.js Materials) ───────────
+function createCubeMaterial(state: UIState): THREE.Material {
+  if (state.showSpeedHeatmap) {
+    return new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.3,
+      metalness: 0.1,
+    });
+  }
 
-    void main() {
-      vUv = uv;
-      vSpeed = aSpeed;
-      vNormal = normalize(normalMatrix * normal);
-      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    precision highp float;
-    uniform sampler2D tDiffuse;
-    uniform int hasTexture;
-    uniform int textureMode;
-    uniform int showSpeedHeatmap;
-    uniform vec3 uColor;
-    uniform vec3 uCameraPosition;
-    
-    varying vec3 vNormal;
-    varying vec3 vWorldPos;
-    varying vec2 vUv;
-    varying float vSpeed;
+  if (state.textureMode === 'file' && loadedFileTexture) {
+    return new THREE.MeshStandardMaterial({
+      map: loadedFileTexture,
+      roughness: 0.35,
+      metalness: 0.05,
+    });
+  }
 
-    void main() {
-      vec3 n = normalize(vNormal);
-      vec3 baseColor;
-      
-      if (showSpeedHeatmap == 1) {
-        // Kinetic Energy / Speed Heatmap:
-        // 0 -> Deep Electric Blue
-        // 5 -> Neon Cyan
-        // 10 -> Vibrant Yellow/Orange
-        // 18+ -> Blazing Hot Magenta/Red
-        float s = clamp(vSpeed / 15.0, 0.0, 1.0);
-        vec3 c0 = vec3(0.08, 0.35, 0.95);
-        vec3 c1 = vec3(0.05, 0.92, 0.75);
-        vec3 c2 = vec3(0.98, 0.85, 0.12);
-        vec3 c3 = vec3(1.0, 0.12, 0.25);
-        
-        if (s < 0.33) {
-          baseColor = mix(c0, c1, s / 0.33);
-        } else if (s < 0.66) {
-          baseColor = mix(c1, c2, (s - 0.33) / 0.33);
-        } else {
-          baseColor = mix(c2, c3, (s - 0.66) / 0.34);
-        }
-      } else if (textureMode == 3 && hasTexture == 1) {
-        // File texture
-        baseColor = texture2D(tDiffuse, vUv).rgb;
-      } else if (textureMode == 1) {
-        // Rainbow mode (map normals to colors)
-        baseColor = abs(n) * 1.2;
-      } else if (textureMode == 2) {
-        // Custom color
-        baseColor = uColor;
-      } else {
-        // Default (mode == 0): Normal-mapped magenta/green gradient
-        baseColor = vec3(
-          n.x * 0.5 + 0.5,
-          n.y * 0.5 + 0.5,
-          n.z * 0.3 + 0.7
-        );
-        baseColor = pow(max(baseColor, vec3(0.001)), vec3(0.8));
-        baseColor *= 1.1;
-      }
-      
-      // Apply lighting and edge darkening
-      vec3 color = baseColor;
-      if (textureMode != 3) {
-        vec3 lightDir = normalize(vec3(0.5, 1.0, 0.7));
-        float diffuse = max(dot(n, lightDir), 0.0) * 0.3 + 0.7;
-        color = baseColor * diffuse;
-        
-        vec3 viewDir = normalize(uCameraPosition - vWorldPos);
-        float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 2.0);
-        color = mix(color, color * 0.5, fresnel * 0.3);
-      } else {
-        vec3 lightDir = normalize(vec3(0.5, 1.0, 0.7));
-        float diffuse = max(dot(n, lightDir), 0.0) * 0.1 + 0.9;
-        color = baseColor * diffuse;
-      }
-      
-      gl_FragColor = vec4(color, 1.0);
-    }
-  `,
-};
+  if (state.textureMode === 'color') {
+    return new THREE.MeshStandardMaterial({
+      color: new THREE.Color(state.customColor),
+      roughness: 0.25,
+      metalness: 0.1,
+    });
+  }
+
+  // Default & Rainbow: Built-in Normal Material
+  return new THREE.MeshNormalMaterial({
+    wireframe: false,
+  });
+}
 
 // ─── Trajectory Helper Interface ────────────────────────────────────────────
 interface TrajectoryData {
@@ -172,7 +100,7 @@ interface JellyCube {
   physics: JellyPhysics;
   mesh: THREE.Mesh;
   geo: THREE.BufferGeometry;
-  mat: THREE.ShaderMaterial;
+  mat: THREE.Material;
   vertexParticleMapping: number[];
   boxHelper: THREE.Group | null;
   velocityHelper: THREE.LineSegments | null;
@@ -194,14 +122,29 @@ function createJellyCube(segments: number, size: number, offsetX: number): Jelly
 
   const geo = new THREE.BoxGeometry(size, size, size, segments, segments, segments);
   const count = geo.attributes.position.count;
-  const speedArray = new Float32Array(count);
-  geo.setAttribute('aSpeed', new THREE.BufferAttribute(speedArray, 1));
+  const colorArray = new Float32Array(count * 3);
+  geo.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
 
-  const mat = new THREE.ShaderMaterial({
-    uniforms: THREE.UniformsUtils.clone(normalShader.uniforms),
-    vertexShader: normalShader.vertexShader,
-    fragmentShader: normalShader.fragmentShader,
-    side: THREE.DoubleSide
+  const mat = createCubeMaterial(uiState || {
+    resolution: 'medium',
+    cubeCount: 1,
+    cubeSize: 3.0,
+    elasticity: 1.5,
+    friction: 0.3,
+    weight: 1.0,
+    pressure: 0.8,
+    gravity: 5,
+    tiltGravity: false,
+    textureMode: 'default',
+    customColor: '#ff0055',
+    textureUrl: null,
+    soundEnabled: false,
+    showBox: false,
+    showVelocity: false,
+    showStress: false,
+    showTrajectory: false,
+    showSpeedHeatmap: false,
+    showStats: false,
   });
 
   const mesh = new THREE.Mesh(geo, mat);
@@ -435,7 +378,6 @@ function updateStressHelper(cube: JellyCube) {
       b = 0.3 + 0.7 * t;
     }
 
-    // Both line endpoints share stress color
     colArray[base] = r; colArray[base + 1] = g; colArray[base + 2] = b;
     colArray[base + 3] = r; colArray[base + 4] = g; colArray[base + 5] = b;
   }
@@ -480,7 +422,6 @@ function updateTrajectoryHelper(cube: JellyCube) {
   if (!cube.trajectoryHelper) return;
   const helper = cube.trajectoryHelper;
 
-  // Compute center of mass
   let avgX = 0, avgY = 0, avgZ = 0;
   const particles = cube.physics.particles;
   for (const p of particles) {
@@ -494,7 +435,6 @@ function updateTrajectoryHelper(cube: JellyCube) {
 
   helper.marker.position.set(avgX, avgY, avgZ);
 
-  // Push new history point if moved
   const currentPos = new THREE.Vector3(avgX, avgY, avgZ);
   if (helper.history.length === 0 || helper.history[helper.history.length - 1].distanceTo(currentPos) > 0.04) {
     helper.history.push(currentPos);
@@ -503,7 +443,6 @@ function updateTrajectoryHelper(cube: JellyCube) {
     }
   }
 
-  // Update line buffer
   const posAttr = helper.trailLine.geometry.attributes.position as THREE.BufferAttribute;
   const array = posAttr.array as Float32Array;
 
@@ -564,7 +503,7 @@ function updateBounds() {
 
   const minX = -visibleWidth / 2 + margin;
   const maxX = visibleWidth / 2 - margin;
-  const minY = 0.0; // Floor at y=0
+  const minY = 0.0;
   const maxY = camY + visibleHeight / 2 - margin;
 
   for (const cube of cubes) {
@@ -677,46 +616,28 @@ function onUIChange(state: UIState) {
     currentTextureUrl = 'force-reapply';
   }
 
-  // Update texture modes and colors
-  for (const cube of cubes) {
-    const texModeIdx =
-      state.textureMode === 'default' ? 0 :
-      state.textureMode === 'rainbow' ? 1 :
-      state.textureMode === 'color' ? 2 : 3;
-    cube.mat.uniforms.textureMode.value = texModeIdx;
-    cube.mat.uniforms.uColor.value.set(state.customColor);
-    cube.mat.uniforms.showSpeedHeatmap.value = state.showSpeedHeatmap ? 1 : 0;
-  }
-
+  // Handle custom image texture loading
   if (state.textureMode === 'file' && state.textureUrl !== currentTextureUrl) {
     currentTextureUrl = state.textureUrl;
     if (currentTextureUrl && currentTextureUrl !== 'force-reapply') {
       const loader = new THREE.TextureLoader();
       loader.load(currentTextureUrl, (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace;
+        loadedFileTexture = tex;
         for (const cube of cubes) {
-          cube.mat.uniforms.tDiffuse.value = tex;
-          cube.mat.uniforms.hasTexture.value = 1;
+          const mat = createCubeMaterial(state);
+          cube.mesh.material = mat;
+          cube.mat = mat;
         }
       });
-    } else if (!currentTextureUrl || currentTextureUrl === 'force-reapply') {
-      currentTextureUrl = state.textureUrl;
-      for (const cube of cubes) {
-        if (!state.textureUrl) {
-          cube.mat.uniforms.tDiffuse.value = null;
-          cube.mat.uniforms.hasTexture.value = 0;
-        } else {
-          const loader = new THREE.TextureLoader();
-          loader.load(state.textureUrl, (tex) => {
-            tex.colorSpace = THREE.SRGBColorSpace;
-            for (const cube of cubes) {
-              cube.mat.uniforms.tDiffuse.value = tex;
-              cube.mat.uniforms.hasTexture.value = 1;
-            }
-          });
-        }
-      }
     }
+  }
+
+  // Update materials for all cubes
+  for (const cube of cubes) {
+    const mat = createCubeMaterial(state);
+    cube.mesh.material = mat;
+    cube.mat = mat;
   }
 
   // Update physical parameters
@@ -853,9 +774,7 @@ function animate() {
   // Update mesh vertices and debug helpers
   for (const cube of cubes) {
     const posAttr = cube.geo.attributes.position as THREE.BufferAttribute;
-    const speedAttr = cube.geo.attributes.aSpeed as THREE.BufferAttribute;
     const array = posAttr.array as Float32Array;
-    const speedArray = speedAttr.array as Float32Array;
     const mapping = cube.vertexParticleMapping;
     
     for (let i = 0; i < posAttr.count; i++) {
@@ -864,16 +783,46 @@ function animate() {
       array[base] = p.position.x;
       array[base + 1] = p.position.y;
       array[base + 2] = p.position.z;
-
-      if (uiState.showSpeedHeatmap) {
-        speedArray[i] = Math.sqrt(p.velocity.x * p.velocity.x + p.velocity.y * p.velocity.y + p.velocity.z * p.velocity.z);
-      }
     }
     posAttr.needsUpdate = true;
-    if (uiState.showSpeedHeatmap) speedAttr.needsUpdate = true;
+
+    // Update kinetic speed heatmap vertex colors if active
+    if (uiState.showSpeedHeatmap) {
+      const colAttr = cube.geo.attributes.color as THREE.BufferAttribute;
+      const colArray = colAttr.array as Float32Array;
+      for (let i = 0; i < posAttr.count; i++) {
+        const p = cube.physics.particles[mapping[i]];
+        const spd = Math.sqrt(p.velocity.x * p.velocity.x + p.velocity.y * p.velocity.y + p.velocity.z * p.velocity.z);
+        const s = Math.min(1.0, spd / 15.0);
+
+        let r = 0.08, g = 0.35, b = 0.95;
+        if (s < 0.33) {
+          const t = s / 0.33;
+          r = 0.08 + (0.05 - 0.08) * t;
+          g = 0.35 + (0.92 - 0.35) * t;
+          b = 0.95 + (0.75 - 0.95) * t;
+        } else if (s < 0.66) {
+          const t = (s - 0.33) / 0.33;
+          r = 0.05 + (0.98 - 0.05) * t;
+          g = 0.92 + (0.85 - 0.92) * t;
+          b = 0.75 + (0.12 - 0.75) * t;
+        } else {
+          const t = (s - 0.66) / 0.34;
+          r = 0.98 + (1.0 - 0.98) * t;
+          g = 0.85 + (0.12 - 0.85) * t;
+          b = 0.12 + (0.25 - 0.12) * t;
+        }
+
+        const base = i * 3;
+        colArray[base] = r;
+        colArray[base + 1] = g;
+        colArray[base + 2] = b;
+      }
+      colAttr.needsUpdate = true;
+    }
+
     cube.geo.computeVertexNormals();
     cube.geo.computeBoundingSphere();
-    cube.mat.uniforms.uCameraPosition.value.copy(camera.position);
 
     // Update active debug helpers
     if (uiState.showBox && cube.boxHelper) updateBoxHelper(cube);
@@ -888,7 +837,6 @@ function animate() {
     const particleCount = primaryPhysics.particles.length * cubes.length;
     const springCount = primaryPhysics.springs.length * cubes.length;
 
-    // Calculate current cross-section area vs rest area
     let areaSum = 0;
     const n = primaryPhysics.segments + 1;
     for (const edge of primaryPhysics.boundaryEdges) {
