@@ -1,3 +1,4 @@
+import './style.css';
 import * as THREE from 'three';
 import { JellyPhysics } from './physics';
 import { createUI, getSegments } from './ui';
@@ -57,7 +58,7 @@ const normalShader = {
     hasTexture: { value: 0 },
     textureMode: { value: 0 },
     showSpeedHeatmap: { value: 0 },
-    uColor: { value: new THREE.Color() }
+    uColor: { value: new THREE.Color('#ff0055') }
   },
   vertexShader: `
     attribute float aSpeed;
