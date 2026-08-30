@@ -97,7 +97,7 @@ export class JellyPhysics {
   substepsPerUpdate: number;
 
   // Physical parameters exposed to UI
-  stiffnessMultiplier = 1.4; // Elasticity: return spring stiffness
+  stiffnessMultiplier = 1.5; // Elasticity: return spring stiffness
   dampingMultiplier = 0.3;   // Friction / Viscosity: damping factor
   weightMultiplier = 1.0;    // Weight / Mass: inertia scaling
   pressureMultiplier = 0.8;  // Pressure: internal volume/area conservation
@@ -119,7 +119,6 @@ export class JellyPhysics {
 
     this.substepsPerUpdate = segments <= 3 ? 2 : segments <= 5 ? 4 : 6;
     
-    // Scale down stiffness at high resolutions to maintain numerical stability
     if (segments >= 8) {
       this.baseStiffnessScale = 0.5;
       this.baseDampingScale = 1.8;
@@ -283,7 +282,6 @@ export class JellyPhysics {
   }
 
   update(dt: number) {
-    // Dynamically calculate required substeps based on effective stiffness / mass ratio
     const weightMul = Math.max(0.1, this.weightMultiplier);
     const effectiveStiffnessRatio = this.stiffnessMultiplier / weightMul;
 
@@ -333,8 +331,7 @@ export class JellyPhysics {
       const rvz = s.p2.velocity.z - s.p1.velocity.z;
       const relSpeedAlongDir = rvx * dirX + rvy * dirY + rvz * dirZ;
 
-      // Non-Newtonian shear-thickening:
-      // High relative speed (sudden pressure/impact) increases resistance
+      // Non-Newtonian shear-thickening
       const relSpeedSq = rvx * rvx + rvy * rvy + rvz * rvz;
       const shearThickening = 1.0 + Math.min(relSpeedSq * 0.04, 2.5);
 
@@ -371,10 +368,7 @@ export class JellyPhysics {
       }
       const currentArea = areaSum / (2.0 * n);
 
-      // 2. Linear Hookean area strain (singularity-free, bounded):
-      // At rest shape, currentArea == restArea -> strain = 0 -> Pressure = 0 (No self-crush).
-      // Under compression, currentArea < restArea -> strain > 0 -> P > 0 pushes outward.
-      // Negative pressure (< 0) causes inward vacuum implosion (Crushed preset).
+      // 2. Linear Hookean area strain (bounded, completely singularity-free)
       const areaStrain = Math.max(-1.5, Math.min(1.5, (this.restArea - currentArea) / this.restArea));
       const kPressure = 90.0 * (5.0 / this.segments);
 
@@ -423,9 +417,9 @@ export class JellyPhysics {
       }
     }
 
-    // Drag: mass-normalized drag force so all weights (0.3x to 2.5x) are smoothly draggable
+    // Drag: Direct, responsive interactive drag force
     if (this.activeDrags.size > 0) {
-      const baseStrength = 500 / this.substepsPerUpdate;
+      const baseStrength = 1800.0 / this.substepsPerUpdate;
       const dampFactor = this.substepsPerUpdate <= 2 ? 0.88 : 0.80;
 
       for (const drag of this.activeDrags.values()) {
@@ -438,7 +432,8 @@ export class JellyPhysics {
           const targetY = drag.target.y + info.offset.y * (1 - lerpW);
           const targetZ = drag.target.z + info.offset.z * (1 - lerpW);
 
-          const strength = baseStrength * info.weight * (pMass * 3.5);
+          // Force scales with mass so all materials accelerate at the same target rate toward pointer
+          const strength = baseStrength * info.weight * pMass * 15.0;
           p.force.x += (targetX - p.position.x) * strength;
           p.force.y += (targetY - p.position.y) * strength;
           p.force.z += (targetZ - p.position.z) * strength;

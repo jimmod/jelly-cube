@@ -6,10 +6,10 @@ export interface UIState {
   resolution: Resolution;
   cubeCount: number;
   cubeSize: number; // 0.5 to 5.0, default 3.0
-  elasticity: number; // 0.0 to 3.0, default 1.4 (Classic Gelatin)
-  friction: number; // 0.1 (gelatinous wiggle) to 5.0 (muddy lag), default 0.3
-  weight: number; // 0.2 (light) to 3.0 (heavy inertia), default 1.0
-  pressure: number; // -2.0 (vacuum implosion) to 3.0 (plump rigid ball), default 0.8
+  elasticity: number; // 0.0 to 3.0, default 1.5 (Classic Gelatin)
+  friction: number; // 0.1 to 5.0, default 0.3
+  weight: number; // 0.2 to 3.0, default 1.0
+  pressure: number; // -2.0 to 3.0, default 0.8
   gravity: number; // 0 (float) to 10 (fast fall), default 5
   tiltGravity: boolean;
   textureMode: 'default' | 'rainbow' | 'color' | 'file';
@@ -37,7 +37,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
     resolution: 'medium',
     cubeCount: 1,
     cubeSize: 3.0,
-    elasticity: 1.4, // Default to Classic Gelatin
+    elasticity: 1.5, // Default to Classic Gelatin
     friction: 0.3,
     weight: 1.0,
     pressure: 0.8,
@@ -56,12 +56,20 @@ export function createUI(onChange: UIChangeCallback): UIState {
   panel.id = 'control-panel';
   panel.className = 'panel-open';
 
-  // ── Toggle button (always visible) ──────────────────────────────
+  // ── Toggle button (Modern Configuration / Sliders Icon) ─────────
   const toggle = document.createElement('button');
   toggle.id = 'panel-toggle';
-  toggle.innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-    <path d="M10 13a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.5"/>
-    <path d="M10 1v2M10 17v2M1 10h2M17 10h2M3.93 3.93l1.41 1.41M14.66 14.66l1.41 1.41M3.93 16.07l1.41-1.41M14.66 5.34l1.41-1.41" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  toggle.setAttribute('aria-label', 'Toggle Control Panel');
+  toggle.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="4" y1="21" x2="4" y2="14"></line>
+    <line x1="4" y1="10" x2="4" y2="3"></line>
+    <line x1="12" y1="21" x2="12" y2="12"></line>
+    <line x1="12" y1="8" x2="12" y2="3"></line>
+    <line x1="20" y1="21" x2="20" y2="16"></line>
+    <line x1="20" y1="12" x2="20" y2="3"></line>
+    <line x1="1" y1="14" x2="7" y2="14"></line>
+    <line x1="9" y1="8" x2="15" y2="8"></line>
+    <line x1="17" y1="16" x2="23" y2="16"></line>
   </svg>`;
   toggle.addEventListener('click', () => {
     panel.classList.toggle('panel-open');
@@ -80,7 +88,10 @@ export function createUI(onChange: UIChangeCallback): UIState {
   body.appendChild(title);
 
   // ── Resolution dropdown ─────────────────────────────────────────
-  const resGroup = createGroup('Resolution');
+  const resGroup = createGroupWithInfo(
+    'Resolution',
+    'Number of internal grid particles. Higher resolution creates a smoother, more detailed jelly mesh.'
+  );
   const resSelect = document.createElement('select');
   resSelect.id = 'res-select';
   (Object.keys(RESOLUTION_MAP) as Resolution[]).forEach((key) => {
@@ -98,7 +109,10 @@ export function createUI(onChange: UIChangeCallback): UIState {
   body.appendChild(resGroup);
 
   // ── Material Presets ────────────────────────────────────────────
-  const presetsGroup = createGroup('Presets');
+  const presetsGroup = createGroupWithInfo(
+    'Presets',
+    'Quick material templates simulating different physical substances from springy gelatin to heavy rubber and slime.'
+  );
   const presetsContainer = document.createElement('div');
   presetsContainer.style.display = 'grid';
   presetsContainer.style.gridTemplateColumns = 'repeat(2, 1fr)';
@@ -163,22 +177,22 @@ export function createUI(onChange: UIChangeCallback): UIState {
   };
 
   // 6 Material Presets conforming to physical rules
-  presetsContainer.appendChild(createPresetBtn('🍮 Classic Gelatin', 1.4, 0.3, 1.0, 0.8));
-  presetsContainer.appendChild(createPresetBtn('🛡️ Heavy Rubber', 2.6, 3.0, 2.5, 2.5));
-  presetsContainer.appendChild(createPresetBtn('🎈 Water Balloon', 0.2, 0.15, 1.6, 2.2));
-  presetsContainer.appendChild(createPresetBtn('🧴 Memory Foam', 0.05, 4.5, 1.0, 0.0));
-  presetsContainer.appendChild(createPresetBtn('💨 Marshmallow', 1.8, 0.8, 0.3, 0.4));
+  presetsContainer.appendChild(createPresetBtn('🍮 Classic Gelatin', 1.5, 0.3, 1.0, 0.8));
+  presetsContainer.appendChild(createPresetBtn('🛡️ Heavy Rubber', 2.6, 3.0, 2.2, 2.0));
+  presetsContainer.appendChild(createPresetBtn('🎈 Water Balloon', 0.3, 0.2, 1.5, 1.8));
+  presetsContainer.appendChild(createPresetBtn('🧴 Memory Foam', 0.35, 4.2, 1.2, 0.3));
+  presetsContainer.appendChild(createPresetBtn('💨 Marshmallow', 1.8, 0.7, 0.5, 0.5));
   presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.1, 5.0, 3.0, -1.5));
   
   presetsGroup.appendChild(presetsContainer);
   body.appendChild(presetsGroup);
 
   // ── Elasticity slider ───────────────────────────────────────────
-  const elastGroup = createGroup('');
-  const elastLabel = document.createElement('label');
-  elastLabel.className = 'control-label';
-  elastLabel.innerHTML = `Elasticity <span class="slider-value" id="bounce-value">${state.elasticity.toFixed(1)}×</span>`;
-  elastGroup.replaceChildren(elastLabel);
+  const elastGroup = createGroupWithInfo(
+    'Elasticity',
+    'Controls how fast the cube returns to its original shape (spring return force).',
+    `<span class="slider-value" id="bounce-value">${state.elasticity.toFixed(1)}×</span>`
+  );
 
   bounceSlider = document.createElement('input');
   bounceSlider.type = 'range';
@@ -198,11 +212,11 @@ export function createUI(onChange: UIChangeCallback): UIState {
   body.appendChild(elastGroup);
 
   // ── Friction slider (formerly Damping) ───────────────────────────
-  const fricGroup = createGroup('');
-  const fricLabel = document.createElement('label');
-  fricLabel.className = 'control-label';
-  fricLabel.innerHTML = `Friction <span class="slider-value" id="friction-value">${state.friction.toFixed(1)}×</span>`;
-  fricGroup.replaceChildren(fricLabel);
+  const fricGroup = createGroupWithInfo(
+    'Friction',
+    'Controls how long the cube jiggles before stopping. Low = prolonged wiggle; High = thick viscous resistance.',
+    `<span class="slider-value" id="friction-value">${state.friction.toFixed(1)}×</span>`
+  );
 
   frictionSlider = document.createElement('input');
   frictionSlider.type = 'range';
@@ -222,11 +236,11 @@ export function createUI(onChange: UIChangeCallback): UIState {
   body.appendChild(fricGroup);
 
   // ── Weight slider (Mass & Inertia) ──────────────────────────────
-  const weightGroup = createGroup('');
-  const weightLabel = document.createElement('label');
-  weightLabel.className = 'control-label';
-  weightLabel.innerHTML = `Weight <span class="slider-value" id="weight-value">${state.weight.toFixed(1)}×</span>`;
-  weightGroup.replaceChildren(weightLabel);
+  const weightGroup = createGroupWithInfo(
+    'Weight',
+    'Mass and inertia of the cube. Higher mass creates more momentum and heavier deformation upon impacts.',
+    `<span class="slider-value" id="weight-value">${state.weight.toFixed(1)}×</span>`
+  );
 
   weightSlider = document.createElement('input');
   weightSlider.type = 'range';
@@ -246,11 +260,11 @@ export function createUI(onChange: UIChangeCallback): UIState {
   body.appendChild(weightGroup);
 
   // ── Pressure slider (Soft-body Internal Volume) ─────────────────
-  const pressGroup = createGroup('');
-  const pressLabel = document.createElement('label');
-  pressLabel.className = 'control-label';
-  pressLabel.innerHTML = `Pressure <span class="slider-value" id="pressure-value">${state.pressure.toFixed(1)}×</span>`;
-  pressGroup.replaceChildren(pressLabel);
+  const pressGroup = createGroupWithInfo(
+    'Pressure',
+    'Internal fluid/air volume. High = plump rigid ball; Low = deflated sack; Negative = vacuum implosion.',
+    `<span class="slider-value" id="pressure-value">${state.pressure.toFixed(1)}×</span>`
+  );
 
   pressureSlider = document.createElement('input');
   pressureSlider.type = 'range';
@@ -270,11 +284,11 @@ export function createUI(onChange: UIChangeCallback): UIState {
   body.appendChild(pressGroup);
 
   // ── Gravity slider ──────────────────────────────────────────────
-  const gravGroup = createGroup('');
-  const gravLabel = document.createElement('label');
-  gravLabel.className = 'control-label';
-  gravLabel.innerHTML = `Gravity <span class="slider-value" id="grav-value">${state.gravity}</span>`;
-  gravGroup.replaceChildren(gravLabel);
+  const gravGroup = createGroupWithInfo(
+    'Gravity',
+    'Downward gravitational force pulling the cube to the floor (0 = float, 10 = fast fall).',
+    `<span class="slider-value" id="grav-value">${state.gravity}</span>`
+  );
 
   const gravSlider = document.createElement('input');
   gravSlider.type = 'range';
@@ -294,33 +308,36 @@ export function createUI(onChange: UIChangeCallback): UIState {
   body.appendChild(gravGroup);
 
   // ── Tilt Gravity Toggle ─────────────────────────────────────────
-  const tiltToggle = createToggle('📱 Tilt Gravity', state.tiltGravity, (val) => {
-    // Request permission on iOS
-    if (val && typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-      (DeviceOrientationEvent as any).requestPermission()
-        .then((permissionState: string) => {
-          if (permissionState === 'granted') {
-            state.tiltGravity = true;
-            onChange({ ...state });
-          } else {
-            // Revert UI if denied
-            tiltToggle.querySelector('input')!.checked = false;
-          }
-        })
-        .catch(console.error);
-    } else {
-      state.tiltGravity = val;
-      onChange({ ...state });
+  const tiltToggle = createToggle(
+    '📱 Tilt Gravity',
+    state.tiltGravity,
+    'Uses your device orientation sensors to pull the jelly cube in the direction you tilt.',
+    (val) => {
+      if (val && typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+        (DeviceOrientationEvent as any).requestPermission()
+          .then((permissionState: string) => {
+            if (permissionState === 'granted') {
+              state.tiltGravity = true;
+              onChange({ ...state });
+            } else {
+              tiltToggle.querySelector('input')!.checked = false;
+            }
+          })
+          .catch(console.error);
+      } else {
+        state.tiltGravity = val;
+        onChange({ ...state });
+      }
     }
-  });
+  );
   body.appendChild(tiltToggle);
 
   // ── Size slider ─────────────────────────────────────────────────
-  const sizeGroup = createGroup('');
-  const sizeLabel = document.createElement('label');
-  sizeLabel.className = 'control-label';
-  sizeLabel.innerHTML = `Size <span class="slider-value" id="size-value">${state.cubeSize.toFixed(1)}</span>`;
-  sizeGroup.replaceChildren(sizeLabel);
+  const sizeGroup = createGroupWithInfo(
+    'Size',
+    'Scale and physical dimensions of the cube.',
+    `<span class="slider-value" id="size-value">${state.cubeSize.toFixed(1)}</span>`
+  );
 
   const sizeSlider = document.createElement('input');
   sizeSlider.type = 'range';
@@ -329,7 +346,6 @@ export function createUI(onChange: UIChangeCallback): UIState {
   sizeSlider.max = '5.0';
   sizeSlider.step = '0.5';
   sizeSlider.value = String(state.cubeSize);
-  // Rebuilding the cube is expensive, so we only want to do it on change, not input
   sizeSlider.addEventListener('change', () => {
     const val = parseFloat(sizeSlider.value);
     state.cubeSize = val;
@@ -337,7 +353,6 @@ export function createUI(onChange: UIChangeCallback): UIState {
     if (valueEl) valueEl.textContent = `${val.toFixed(1)}`;
     onChange({ ...state });
   });
-  // Update the label instantly while dragging
   sizeSlider.addEventListener('input', () => {
     const val = parseFloat(sizeSlider.value);
     const valueEl = document.getElementById('size-value');
@@ -347,15 +362,23 @@ export function createUI(onChange: UIChangeCallback): UIState {
   body.appendChild(sizeGroup);
 
   // ── Sound Toggle ────────────────────────────────────────────────
-  const soundToggle = createToggle('Sound', state.soundEnabled, (val) => {
-    state.soundEnabled = val;
-    setSoundEnabled(val);
-    onChange({ ...state });
-  });
+  const soundToggle = createToggle(
+    'Sound',
+    state.soundEnabled,
+    'Plays dynamic synthesized audio when squishing, bouncing, and impacting surfaces.',
+    (val) => {
+      state.soundEnabled = val;
+      setSoundEnabled(val);
+      onChange({ ...state });
+    }
+  );
   body.appendChild(soundToggle);
 
   // ── Texture Presets ──────────────────────────────────────────────
-  const texGroup = createGroup('Texture');
+  const texGroup = createGroupWithInfo(
+    'Texture',
+    'Visual shader mode: Default surface normal gradient, rainbow faces, solid color, or custom image file.'
+  );
   
   const texSelect = document.createElement('select');
   texSelect.style.width = '100%';
@@ -443,20 +466,31 @@ export function createUI(onChange: UIChangeCallback): UIState {
   body.appendChild(debugLabel);
 
   // ── Toggle switches ─────────────────────────────────────────────
-  const boxToggle = createToggle('Wireframe', state.showBox, (val) => {
-    state.showBox = val;
-    onChange({ ...state });
-  });
+  const boxToggle = createToggle(
+    'Wireframe',
+    state.showBox,
+    'Visualizes the 3D internal mass-spring lattice and bounding box.',
+    (val) => {
+      state.showBox = val;
+      onChange({ ...state });
+    }
+  );
   body.appendChild(boxToggle);
 
-  const velToggle = createToggle('Velocity', state.showVelocity, (val) => {
-    state.showVelocity = val;
-    onChange({ ...state });
-  });
+  const velToggle = createToggle(
+    'Velocity',
+    state.showVelocity,
+    'Draws real-time velocity vectors for all active simulation particles.',
+    (val) => {
+      state.showVelocity = val;
+      onChange({ ...state });
+    }
+  );
   body.appendChild(velToggle);
 
   // ── Reset Button ────────────────────────────────────────────────
-  const btnGroup = createGroup('');
+  const btnGroup = document.createElement('div');
+  btnGroup.className = 'control-group';
   const resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset to Defaults';
   resetBtn.style.width = '100%';
@@ -472,7 +506,7 @@ export function createUI(onChange: UIChangeCallback): UIState {
   resetBtn.addEventListener('click', () => {
     window.location.reload();
   });
-  btnGroup.replaceChildren(resetBtn);
+  btnGroup.appendChild(resetBtn);
   body.appendChild(btnGroup);
 
   panel.appendChild(body);
@@ -483,30 +517,104 @@ export function createUI(onChange: UIChangeCallback): UIState {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function createGroup(label: string): HTMLDivElement {
+function createGroupWithInfo(label: string, infoText: string, extraHtml: string = ''): HTMLDivElement {
   const group = document.createElement('div');
   group.className = 'control-group';
 
+  const header = document.createElement('div');
+  header.className = 'control-header';
+
   const lbl = document.createElement('label');
   lbl.className = 'control-label';
-  lbl.textContent = label;
-  group.appendChild(lbl);
+  lbl.innerHTML = `${label} ${extraHtml}`;
+  header.appendChild(lbl);
 
+  // Info Icon & Popup
+  const infoWrapper = document.createElement('div');
+  infoWrapper.className = 'info-wrapper';
+
+  const infoBtn = document.createElement('button');
+  infoBtn.className = 'info-btn';
+  infoBtn.setAttribute('type', 'button');
+  infoBtn.setAttribute('aria-label', `Information about ${label}`);
+  infoBtn.textContent = 'ⓘ';
+
+  const popup = document.createElement('div');
+  popup.className = 'info-popup';
+  popup.textContent = infoText;
+
+  // Touch support for mobile
+  infoBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    popup.classList.toggle('show');
+  });
+
+  // Close popup when tapping elsewhere
+  document.addEventListener('click', () => {
+    popup.classList.remove('show');
+  });
+
+  infoWrapper.appendChild(infoBtn);
+  infoWrapper.appendChild(popup);
+  header.appendChild(infoWrapper);
+
+  group.appendChild(header);
   return group;
 }
 
 function createToggle(
   label: string,
   initial: boolean,
+  infoText: string,
   onToggle: (val: boolean) => void,
 ): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'toggle-row';
+  row.style.display = 'flex';
+  row.style.alignItems = 'center';
+  row.style.justifyContent = 'space-between';
+  row.style.marginBottom = '8px';
+
+  const left = document.createElement('div');
+  left.style.display = 'flex';
+  left.style.alignItems = 'center';
+  left.style.gap = '6px';
 
   const lbl = document.createElement('span');
   lbl.className = 'toggle-label';
   lbl.textContent = label;
-  row.appendChild(lbl);
+  lbl.style.fontSize = '12px';
+  lbl.style.fontWeight = '500';
+  lbl.style.color = 'rgba(255, 255, 255, 0.8)';
+  left.appendChild(lbl);
+
+  // Info Popup
+  const infoWrapper = document.createElement('div');
+  infoWrapper.className = 'info-wrapper';
+
+  const infoBtn = document.createElement('button');
+  infoBtn.className = 'info-btn';
+  infoBtn.setAttribute('type', 'button');
+  infoBtn.textContent = 'ⓘ';
+
+  const popup = document.createElement('div');
+  popup.className = 'info-popup';
+  popup.textContent = infoText;
+
+  infoBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    popup.classList.toggle('show');
+  });
+
+  document.addEventListener('click', () => {
+    popup.classList.remove('show');
+  });
+
+  infoWrapper.appendChild(infoBtn);
+  infoWrapper.appendChild(popup);
+  left.appendChild(infoWrapper);
+
+  row.appendChild(left);
 
   const switchEl = document.createElement('label');
   switchEl.className = 'toggle-switch';
