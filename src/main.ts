@@ -61,6 +61,7 @@ function createCubeMaterial(state: UIState): THREE.Material {
       vertexColors: true,
       roughness: 0.3,
       metalness: 0.1,
+      side: THREE.DoubleSide,
     });
   }
 
@@ -69,6 +70,7 @@ function createCubeMaterial(state: UIState): THREE.Material {
       map: loadedFileTexture,
       roughness: 0.35,
       metalness: 0.05,
+      side: THREE.DoubleSide,
     });
   }
 
@@ -77,12 +79,14 @@ function createCubeMaterial(state: UIState): THREE.Material {
       color: new THREE.Color(state.customColor),
       roughness: 0.25,
       metalness: 0.1,
+      side: THREE.DoubleSide,
     });
   }
 
   // Default & Rainbow: Built-in Normal Material
   return new THREE.MeshNormalMaterial({
     wireframe: false,
+    side: THREE.DoubleSide,
   });
 }
 
