@@ -134,12 +134,6 @@ canvas {
   margin-bottom: 0;
 }
 
-.info-wrapper {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-
 .info-btn {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -152,50 +146,51 @@ canvas {
   line-height: 1;
   border-radius: 50%;
   transition: color 0.15s, background 0.15s, border-color 0.15s, transform 0.15s;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
+  flex-shrink: 0;
 }
 
-.info-btn:hover, .info-btn:focus, .info-btn.active {
+.info-btn:hover, .info-btn.active {
   color: #93c5fd;
   background: rgba(59, 130, 246, 0.25);
   border-color: rgba(147, 197, 253, 0.5);
-  transform: scale(1.15);
+  transform: scale(1.1);
 }
 
-.info-popup {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 300;
-  width: 200px;
+.info-callout {
+  display: none;
+  margin-top: 6px;
+  margin-bottom: 8px;
   padding: 8px 10px;
-  background: rgba(18, 20, 32, 0.96);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.95);
+  background: rgba(25, 33, 56, 0.75);
+  border-left: 3px solid #60a5fa;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.92);
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.45;
   font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.3);
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(-4px);
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.info-wrapper:hover .info-popup,
-.info-wrapper:focus-within .info-popup,
-.info-popup.show {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
+.info-callout.show {
+  display: block;
+  animation: calloutFadeIn 0.18s ease-out;
+}
+
+@keyframes calloutFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ── Dropdown select ──────────────────────────────────────────────── */

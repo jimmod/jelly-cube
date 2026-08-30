@@ -529,36 +529,26 @@ function createGroupWithInfo(label: string, infoText: string, extraHtml: string 
   lbl.innerHTML = `${label} ${extraHtml}`;
   header.appendChild(lbl);
 
-  // Info Icon & Popup
-  const infoWrapper = document.createElement('div');
-  infoWrapper.className = 'info-wrapper';
-
+  // Info Button & Inline Callout
   const infoBtn = document.createElement('button');
   infoBtn.className = 'info-btn';
   infoBtn.setAttribute('type', 'button');
   infoBtn.setAttribute('aria-label', `Information about ${label}`);
   infoBtn.textContent = 'ⓘ';
 
-  const popup = document.createElement('div');
-  popup.className = 'info-popup';
-  popup.textContent = infoText;
+  const callout = document.createElement('div');
+  callout.className = 'info-callout';
+  callout.textContent = infoText;
 
-  // Touch support for mobile
   infoBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    popup.classList.toggle('show');
+    infoBtn.classList.toggle('active');
+    callout.classList.toggle('show');
   });
 
-  // Close popup when tapping elsewhere
-  document.addEventListener('click', () => {
-    popup.classList.remove('show');
-  });
-
-  infoWrapper.appendChild(infoBtn);
-  infoWrapper.appendChild(popup);
-  header.appendChild(infoWrapper);
-
+  header.appendChild(infoBtn);
   group.appendChild(header);
+  group.appendChild(callout);
   return group;
 }
 
@@ -568,12 +558,15 @@ function createToggle(
   infoText: string,
   onToggle: (val: boolean) => void,
 ): HTMLDivElement {
+  const group = document.createElement('div');
+  group.className = 'toggle-group';
+  group.style.marginBottom = '10px';
+
   const row = document.createElement('div');
   row.className = 'toggle-row';
   row.style.display = 'flex';
   row.style.alignItems = 'center';
   row.style.justifyContent = 'space-between';
-  row.style.marginBottom = '8px';
 
   const left = document.createElement('div');
   left.style.display = 'flex';
@@ -585,35 +578,26 @@ function createToggle(
   lbl.textContent = label;
   lbl.style.fontSize = '12px';
   lbl.style.fontWeight = '500';
-  lbl.style.color = 'rgba(255, 255, 255, 0.8)';
+  lbl.style.color = 'rgba(255, 255, 255, 0.85)';
   left.appendChild(lbl);
-
-  // Info Popup
-  const infoWrapper = document.createElement('div');
-  infoWrapper.className = 'info-wrapper';
 
   const infoBtn = document.createElement('button');
   infoBtn.className = 'info-btn';
   infoBtn.setAttribute('type', 'button');
+  infoBtn.setAttribute('aria-label', `Information about ${label}`);
   infoBtn.textContent = 'ⓘ';
 
-  const popup = document.createElement('div');
-  popup.className = 'info-popup';
-  popup.textContent = infoText;
+  const callout = document.createElement('div');
+  callout.className = 'info-callout';
+  callout.textContent = infoText;
 
   infoBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    popup.classList.toggle('show');
+    infoBtn.classList.toggle('active');
+    callout.classList.toggle('show');
   });
 
-  document.addEventListener('click', () => {
-    popup.classList.remove('show');
-  });
-
-  infoWrapper.appendChild(infoBtn);
-  infoWrapper.appendChild(popup);
-  left.appendChild(infoWrapper);
-
+  left.appendChild(infoBtn);
   row.appendChild(left);
 
   const switchEl = document.createElement('label');
@@ -633,5 +617,7 @@ function createToggle(
   switchEl.appendChild(slider);
   row.appendChild(switchEl);
 
-  return row;
+  group.appendChild(row);
+  group.appendChild(callout);
+  return group;
 }
