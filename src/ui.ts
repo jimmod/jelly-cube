@@ -176,11 +176,11 @@ export function createUI(onChange: UIChangeCallback): UIState {
     return btn;
   };
 
-  // 6 Material Presets conforming to physical rules
-  presetsContainer.appendChild(createPresetBtn('🍮 Classic Gelatin', 1.5, 0.3, 1.0, 0.8));
-  presetsContainer.appendChild(createPresetBtn('🛡️ Heavy Rubber', 2.6, 3.0, 2.2, 2.0));
-  presetsContainer.appendChild(createPresetBtn('🎈 Water Balloon', 0.3, 0.2, 1.5, 1.8));
-  presetsContainer.appendChild(createPresetBtn('🧴 Memory Foam', 0.35, 4.2, 1.2, 0.3));
+  // 6 Material Presets conforming to physical rules (single-word labels)
+  presetsContainer.appendChild(createPresetBtn('🍮 Gelatin', 1.5, 0.3, 1.0, 0.8));
+  presetsContainer.appendChild(createPresetBtn('🛡️ Rubber', 2.6, 3.0, 2.2, 2.0));
+  presetsContainer.appendChild(createPresetBtn('🎈 Balloon', 0.3, 0.2, 1.5, 1.8));
+  presetsContainer.appendChild(createPresetBtn('🧴 Foam', 0.35, 4.2, 1.2, 0.3));
   presetsContainer.appendChild(createPresetBtn('💨 Marshmallow', 1.8, 0.7, 0.5, 0.5));
   presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.1, 5.0, 3.0, -1.5));
   
