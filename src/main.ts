@@ -1,118 +1,21 @@
 import './style.css';
 import * as THREE from 'three';
 import { JellyPhysics } from './physics';
-import { createUI, getSegments } from './ui';
-import type { UIState } from './ui';
-import { playPressSound } from './audio';
+import { createUI } from './ui';
+import { getSegments, DEFAULT_UI_STATE, CUBE_SPACING, PHYSICS_DT } from './config';
+import { scene, camera, renderer, updateCamera, getVisibleBounds, handleResize } from './scene';
+import { createCubeMaterial, setFileTexture } from './materials';
+import {
+  buildBoxHelper, updateBoxHelper,
+  buildVelocityHelper, updateVelocityHelper,
+  buildStressHelper, updateStressHelper,
+  buildTrajectoryHelper, updateTrajectoryHelper,
+  updateSpeedHeatmap,
+} from './debug-helpers';
+import { setupPointerInteraction } from './interaction';
+import type { UIState, JellyCube } from './types';
 
-// ─── Three.js Scene Setup ───────────────────────────────────────────────────
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0f1016); // Deep space dark background
-
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 4.5, 14);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
-document.body.appendChild(renderer.domElement);
-
-// ─── Lighting ────────────────────────────────────────────────────────────────
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-scene.add(ambientLight);
-
-const dirLight = new THREE.DirectionalLight(0xffeedd, 1.4);
-dirLight.position.set(6, 12, 8);
-dirLight.castShadow = true;
-dirLight.shadow.mapSize.width = 1024;
-dirLight.shadow.mapSize.height = 1024;
-dirLight.shadow.camera.near = 0.5;
-dirLight.shadow.camera.far = 30;
-dirLight.shadow.camera.left = -10;
-dirLight.shadow.camera.right = 10;
-dirLight.shadow.camera.top = 10;
-dirLight.shadow.camera.bottom = -10;
-dirLight.shadow.bias = -0.001;
-scene.add(dirLight);
-
-const fillLight = new THREE.DirectionalLight(0x60a5fa, 0.6);
-fillLight.position.set(-6, 6, -5);
-scene.add(fillLight);
-
-// ─── Invisible floor (for shadow only) ──────────────────────────────────────
-const floorGeo = new THREE.PlaneGeometry(80, 80);
-const floorMat = new THREE.ShadowMaterial({ opacity: 0.25 });
-const floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
-
-// ─── Texture Cache ──────────────────────────────────────────────────────────
-let loadedFileTexture: THREE.Texture | null = null;
-
-// ─── Material Generator (100% Robust Standard Three.js Materials) ───────────
-function createCubeMaterial(state: UIState): THREE.Material {
-  if (state.showSpeedHeatmap) {
-    return new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.3,
-      metalness: 0.1,
-      side: THREE.DoubleSide,
-    });
-  }
-
-  if (state.textureMode === 'file' && loadedFileTexture) {
-    return new THREE.MeshStandardMaterial({
-      map: loadedFileTexture,
-      roughness: 0.35,
-      metalness: 0.05,
-      side: THREE.DoubleSide,
-    });
-  }
-
-  if (state.textureMode === 'color') {
-    return new THREE.MeshStandardMaterial({
-      color: new THREE.Color(state.customColor),
-      roughness: 0.25,
-      metalness: 0.1,
-      side: THREE.DoubleSide,
-    });
-  }
-
-  // Default & Rainbow: Built-in Normal Material
-  return new THREE.MeshNormalMaterial({
-    wireframe: false,
-    side: THREE.DoubleSide,
-  });
-}
-
-// ─── Trajectory Helper Interface ────────────────────────────────────────────
-interface TrajectoryData {
-  group: THREE.Group;
-  trailLine: THREE.Line;
-  marker: THREE.Mesh;
-  history: THREE.Vector3[];
-  maxPoints: number;
-}
-
-// ─── JellyCube Interface ────────────────────────────────────────────────────
-interface JellyCube {
-  physics: JellyPhysics;
-  mesh: THREE.Mesh;
-  geo: THREE.BufferGeometry;
-  mat: THREE.Material;
-  vertexParticleMapping: number[];
-  boxHelper: THREE.Group | null;
-  velocityHelper: THREE.LineSegments | null;
-  stressHelper: THREE.LineSegments | null;
-  trajectoryHelper: TrajectoryData | null;
-  offsetX: number;
-}
-
+// ─── Cube Management ────────────────────────────────────────────────────────
 const cubes: JellyCube[] = [];
 
 function createJellyCube(segments: number, size: number, offsetX: number): JellyCube {
@@ -129,27 +32,7 @@ function createJellyCube(segments: number, size: number, offsetX: number): Jelly
   const colorArray = new Float32Array(count * 3);
   geo.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
 
-  const mat = createCubeMaterial(uiState || {
-    resolution: 'medium',
-    cubeCount: 1,
-    cubeSize: 3.0,
-    elasticity: 1.5,
-    friction: 0.3,
-    weight: 1.0,
-    pressure: 0.8,
-    gravity: 5,
-    tiltGravity: false,
-    textureMode: 'default',
-    customColor: '#ff0055',
-    textureUrl: null,
-    soundEnabled: false,
-    showBox: false,
-    showVelocity: false,
-    showStress: false,
-    showTrajectory: false,
-    showSpeedHeatmap: false,
-    showStats: false,
-  });
+  const mat = createCubeMaterial(uiState || DEFAULT_UI_STATE);
 
   const mesh = new THREE.Mesh(geo, mat);
   mesh.castShadow = true;
@@ -230,243 +113,12 @@ function removeJellyCube(cube: JellyCube) {
   }
 }
 
-// ─── Debug: Box Wireframe ───────────────────────────────────────────────────
-function buildBoxHelper(cube: JellyCube): THREE.Group {
-  const segments = cube.physics.segments;
-  const group = new THREE.Group();
-  const n = segments;
-  const size = 2.0;
-  const step = (size * 2) / n;
-
-  const mat = new THREE.LineBasicMaterial({ color: 0x64748b, transparent: true, opacity: 0.45 });
-
-  for (let iz = 0; iz < n; iz++) {
-    for (let iy = 0; iy < n; iy++) {
-      for (let ix = 0; ix < n; ix++) {
-        const cx = ix * step - size + step / 2;
-        const cy = iy * step - size + step / 2;
-        const cz = iz * step - size + step / 2;
-        const boxGeo = new THREE.BoxGeometry(step * 0.95, step * 0.95, step * 0.95);
-        const edges = new THREE.EdgesGeometry(boxGeo);
-        const line = new THREE.LineSegments(edges, mat);
-        line.position.set(cx, cy, cz);
-        group.add(line);
-        boxGeo.dispose();
-        edges.dispose();
-      }
-    }
-  }
-
-  return group;
-}
-
-function updateBoxHelper(cube: JellyCube) {
-  if (!cube.boxHelper) return;
-  const n = cube.physics.segments;
-  const nn = n + 1;
-  let childIdx = 0;
-
-  for (let iz = 0; iz < n; iz++) {
-    for (let iy = 0; iy < n; iy++) {
-      for (let ix = 0; ix < n; ix++) {
-        const getIdx = (x: number, y: number, z: number) => z * nn * nn + y * nn + x;
-
-        const corners = [
-          getIdx(ix, iy, iz), getIdx(ix + 1, iy, iz),
-          getIdx(ix, iy + 1, iz), getIdx(ix + 1, iy + 1, iz),
-          getIdx(ix, iy, iz + 1), getIdx(ix + 1, iy, iz + 1),
-          getIdx(ix, iy + 1, iz + 1), getIdx(ix + 1, iy + 1, iz + 1),
-        ];
-
-        let cx = 0, cy = 0, cz = 0;
-        for (const ci of corners) {
-          const p = cube.physics.particles[ci];
-          cx += p.position.x;
-          cy += p.position.y;
-          cz += p.position.z;
-        }
-        cx /= 8; cy /= 8; cz /= 8;
-
-        if (childIdx < cube.boxHelper.children.length) {
-          cube.boxHelper.children[childIdx].position.set(cx, cy, cz);
-        }
-        childIdx++;
-      }
-    }
-  }
-}
-
-// ─── Debug: Velocity Lines ──────────────────────────────────────────────────
-function buildVelocityHelper(cube: JellyCube): THREE.LineSegments {
-  const count = cube.physics.particles.length;
-  const geo = new THREE.BufferGeometry();
-  const positions = new Float32Array(count * 6);
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-  const mat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.75 });
-  return new THREE.LineSegments(geo, mat);
-}
-
-function updateVelocityHelper(cube: JellyCube) {
-  if (!cube.velocityHelper) return;
-  const positions = (cube.velocityHelper.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
-  const scale = 0.15;
-
-  for (let i = 0; i < cube.physics.particles.length; i++) {
-    const p = cube.physics.particles[i];
-    const base = i * 6;
-    positions[base] = p.position.x;
-    positions[base + 1] = p.position.y;
-    positions[base + 2] = p.position.z;
-    positions[base + 3] = p.position.x + p.velocity.x * scale;
-    positions[base + 4] = p.position.y + p.velocity.y * scale;
-    positions[base + 5] = p.position.z + p.velocity.z * scale;
-  }
-  (cube.velocityHelper.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-}
-
-// ─── Debug: Stress / Strain Heatmap (FEA) ───────────────────────────────────
-function buildStressHelper(cube: JellyCube): THREE.LineSegments {
-  const count = cube.physics.springs.length;
-  const geo = new THREE.BufferGeometry();
-  const positions = new Float32Array(count * 6);
-  const colors = new Float32Array(count * 6);
-
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-  const mat = new THREE.LineBasicMaterial({
-    vertexColors: true,
-    transparent: true,
-    opacity: 0.9,
-    depthWrite: false
-  });
-  return new THREE.LineSegments(geo, mat);
-}
-
-function updateStressHelper(cube: JellyCube) {
-  if (!cube.stressHelper) return;
-  const geo = cube.stressHelper.geometry;
-  const posArray = (geo.attributes.position as THREE.BufferAttribute).array as Float32Array;
-  const colArray = (geo.attributes.color as THREE.BufferAttribute).array as Float32Array;
-
-  const springs = cube.physics.springs;
-  for (let i = 0; i < springs.length; i++) {
-    const s = springs[i];
-    const p1 = s.p1.position;
-    const p2 = s.p2.position;
-
-    const base = i * 6;
-    posArray[base] = p1.x;
-    posArray[base + 1] = p1.y;
-    posArray[base + 2] = p1.z;
-    posArray[base + 3] = p2.x;
-    posArray[base + 4] = p2.y;
-    posArray[base + 5] = p2.z;
-
-    const dist = p1.distanceTo(p2);
-    const strain = (dist - s.restLength) / s.restLength;
-
-    let r = 0.2, g = 0.9, b = 0.3;
-    if (strain >= 0) {
-      // Tension (Stretching) -> Red
-      const t = Math.min(1.0, strain * 4.5);
-      r = 0.2 + 0.8 * t;
-      g = 0.9 * (1.0 - t * 0.85);
-      b = 0.3 * (1.0 - t);
-    } else {
-      // Compression (Squishing) -> Electric Cyan / Blue
-      const t = Math.min(1.0, -strain * 4.5);
-      r = 0.2 * (1.0 - t);
-      g = 0.9 * (1.0 - t * 0.4);
-      b = 0.3 + 0.7 * t;
-    }
-
-    colArray[base] = r; colArray[base + 1] = g; colArray[base + 2] = b;
-    colArray[base + 3] = r; colArray[base + 4] = g; colArray[base + 5] = b;
-  }
-
-  (geo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-  (geo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
-}
-
-// ─── Debug: Trajectory & Center of Mass ─────────────────────────────────────
-function buildTrajectoryHelper(): TrajectoryData {
-  const group = new THREE.Group();
-  const maxPoints = 60;
-  const positions = new Float32Array(maxPoints * 3);
-
-  const trailGeo = new THREE.BufferGeometry();
-  trailGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const trailMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85 });
-  const trailLine = new THREE.Line(trailGeo, trailMat);
-
-  const markerGeo = new THREE.SphereGeometry(0.18, 16, 16);
-  const markerMat = new THREE.MeshBasicMaterial({ color: 0x60a5fa });
-  const marker = new THREE.Mesh(markerGeo, markerMat);
-
-  const ringGeo = new THREE.RingGeometry(0.24, 0.32, 24);
-  const ringMat = new THREE.MeshBasicMaterial({ color: 0x93c5fd, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  marker.add(ring);
-
-  group.add(trailLine);
-  group.add(marker);
-
-  return {
-    group,
-    trailLine,
-    marker,
-    history: [],
-    maxPoints,
-  };
-}
-
-function updateTrajectoryHelper(cube: JellyCube) {
-  if (!cube.trajectoryHelper) return;
-  const helper = cube.trajectoryHelper;
-
-  let avgX = 0, avgY = 0, avgZ = 0;
-  const particles = cube.physics.particles;
-  for (const p of particles) {
-    avgX += p.position.x;
-    avgY += p.position.y;
-    avgZ += p.position.z;
-  }
-  avgX /= particles.length;
-  avgY /= particles.length;
-  avgZ /= particles.length;
-
-  helper.marker.position.set(avgX, avgY, avgZ);
-
-  const currentPos = new THREE.Vector3(avgX, avgY, avgZ);
-  if (helper.history.length === 0 || helper.history[helper.history.length - 1].distanceTo(currentPos) > 0.04) {
-    helper.history.push(currentPos);
-    if (helper.history.length > helper.maxPoints) {
-      helper.history.shift();
-    }
-  }
-
-  const posAttr = helper.trailLine.geometry.attributes.position as THREE.BufferAttribute;
-  const array = posAttr.array as Float32Array;
-
-  for (let i = 0; i < helper.maxPoints; i++) {
-    const pt = i < helper.history.length ? helper.history[i] : currentPos;
-    const base = i * 3;
-    array[base] = pt.x;
-    array[base + 1] = pt.y;
-    array[base + 2] = pt.z;
-  }
-  posAttr.needsUpdate = true;
-}
-
-// ─── Cube layout ─────────────────────────────────────────────────────────────
+// ─── Layout & Bounds ────────────────────────────────────────────────────────
 function getCubeOffsets(count: number): number[] {
-  const spacing = 5.0;
   const offsets: number[] = [];
-  const totalWidth = (count - 1) * spacing;
+  const totalWidth = (count - 1) * CUBE_SPACING;
   for (let i = 0; i < count; i++) {
-    offsets.push(i * spacing - totalWidth / 2);
+    offsets.push(i * CUBE_SPACING - totalWidth / 2);
   }
   return offsets;
 }
@@ -484,127 +136,26 @@ function rebuildAllCubes(segments: number, count: number, size: number) {
 
   updateCamera(count);
   updateBounds();
-}
 
-function updateCamera(count: number) {
-  const targetY = 3.5;
-  const dist = 11 + count * 2.0;
-  camera.position.set(0, targetY + 1.0, dist);
-  camera.lookAt(0, targetY, 0);
+  // Re-setup pointer interaction with new cubes array
+  cleanupPointers();
+  cleanupPointers = setupPointerInteraction(cubes);
 }
 
 function updateBounds() {
-  const aspect = window.innerWidth / window.innerHeight;
-  const vFOV = (camera.fov * Math.PI) / 180;
-  const targetZ = 0;
-  const dist = camera.position.z - targetZ;
-
-  const visibleHeight = 2 * Math.tan(vFOV / 2) * dist;
-  const visibleWidth = visibleHeight * aspect;
-
-  const camY = camera.position.y;
-  const margin = 0.5;
-
-  const minX = -visibleWidth / 2 + margin;
-  const maxX = visibleWidth / 2 - margin;
-  const minY = 0.0;
-  const maxY = camY + visibleHeight / 2 - margin;
-
+  const bounds = getVisibleBounds();
   for (const cube of cubes) {
-    cube.physics.setBounds(minX, maxX, minY, maxY);
+    cube.physics.setBounds(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY);
   }
 }
 
-// ─── Pointer Interaction ─────────────────────────────────────────────────────
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
+// ─── Pointer Interaction ────────────────────────────────────────────────────
+let cleanupPointers = setupPointerInteraction(cubes);
 
-interface PointerDrag {
-  cube: JellyCube;
-  plane: THREE.Plane;
-}
-const activePointers: Map<number, PointerDrag> = new Map();
-
-function screenToNDC(clientX: number, clientY: number) {
-  mouse.x = (clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(clientY / window.innerHeight) * 2 + 1;
-}
-
-function onPointerDown(event: PointerEvent) {
-  if (event.target instanceof HTMLElement && event.target.closest('#control-panel')) return;
-
-  screenToNDC(event.clientX, event.clientY);
-  raycaster.setFromCamera(mouse, camera);
-
-  let closestHit: THREE.Intersection | null = null;
-  let hitCube: JellyCube | null = null;
-
-  for (const cube of cubes) {
-    const intersects = raycaster.intersectObject(cube.mesh);
-    if (intersects.length > 0) {
-      if (!closestHit || intersects[0].distance < closestHit.distance) {
-        closestHit = intersects[0];
-        hitCube = cube;
-      }
-    }
-  }
-
-  if (closestHit && hitCube) {
-    const hitPoint = closestHit.point;
-    const normal = new THREE.Vector3();
-    camera.getWorldDirection(normal);
-    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, hitPoint);
-
-    const grabRadius = 2.5;
-    hitCube.physics.startDrag(event.pointerId, hitPoint, grabRadius);
-    playPressSound();
-    
-    activePointers.set(event.pointerId, { cube: hitCube, plane });
-    document.body.style.cursor = 'grabbing';
-    
-    renderer.domElement.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  }
-}
-
-function onPointerMove(event: PointerEvent) {
-  const drag = activePointers.get(event.pointerId);
-  if (!drag) return;
-
-  screenToNDC(event.clientX, event.clientY);
-  raycaster.setFromCamera(mouse, camera);
-
-  const intersection = new THREE.Vector3();
-  if (raycaster.ray.intersectPlane(drag.plane, intersection)) {
-    drag.cube.physics.updateDrag(event.pointerId, intersection);
-  }
-  event.preventDefault();
-}
-
-function onPointerUp(event: PointerEvent) {
-  const drag = activePointers.get(event.pointerId);
-  if (drag) {
-    drag.cube.physics.endDrag(event.pointerId);
-    activePointers.delete(event.pointerId);
-    if (activePointers.size === 0) {
-      document.body.style.cursor = 'default';
-    }
-    try {
-      renderer.domElement.releasePointerCapture(event.pointerId);
-    } catch (_) {}
-  }
-}
-
-renderer.domElement.addEventListener('pointerdown', onPointerDown);
-renderer.domElement.addEventListener('pointermove', onPointerMove);
-renderer.domElement.addEventListener('pointerup', onPointerUp);
-renderer.domElement.addEventListener('pointercancel', onPointerUp);
-
-// ─── UI & HUD Integration ───────────────────────────────────────────────────
+// ─── UI & HUD Integration ──────────────────────────────────────────────────
 let uiState: UIState;
 let currentTextureUrl: string | null = null;
 
-// Stats HUD DOM Element
 const statsHud = document.createElement('div');
 statsHud.id = 'physics-stats-hud';
 document.body.appendChild(statsHud);
@@ -627,7 +178,7 @@ function onUIChange(state: UIState) {
       const loader = new THREE.TextureLoader();
       loader.load(currentTextureUrl, (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace;
-        loadedFileTexture = tex;
+        setFileTexture(tex);
         for (const cube of cubes) {
           const mat = createCubeMaterial(state);
           cube.mesh.material = mat;
@@ -651,11 +202,11 @@ function onUIChange(state: UIState) {
     cube.physics.weightMultiplier = state.weight;
     cube.physics.pressureMultiplier = state.pressure;
     if (!state.tiltGravity) {
-      cube.physics.gravity.set(0, - (state.gravity * 4), 0);
+      cube.physics.gravity.set(0, -(state.gravity * 4), 0);
     }
   }
 
-  // Debug: Box Helper
+  // Debug helpers: Box
   for (const cube of cubes) {
     if (state.showBox && !cube.boxHelper) {
       cube.boxHelper = buildBoxHelper(cube);
@@ -666,7 +217,7 @@ function onUIChange(state: UIState) {
     }
   }
 
-  // Debug: Velocity Helper
+  // Debug helpers: Velocity
   for (const cube of cubes) {
     if (state.showVelocity && !cube.velocityHelper) {
       cube.velocityHelper = buildVelocityHelper(cube);
@@ -677,7 +228,7 @@ function onUIChange(state: UIState) {
     }
   }
 
-  // Debug: Stress Helper
+  // Debug helpers: Stress
   for (const cube of cubes) {
     if (state.showStress && !cube.stressHelper) {
       cube.stressHelper = buildStressHelper(cube);
@@ -688,7 +239,7 @@ function onUIChange(state: UIState) {
     }
   }
 
-  // Debug: Trajectory Helper
+  // Debug helpers: Trajectory
   for (const cube of cubes) {
     if (state.showTrajectory && !cube.trajectoryHelper) {
       cube.trajectoryHelper = buildTrajectoryHelper();
@@ -699,7 +250,7 @@ function onUIChange(state: UIState) {
     }
   }
 
-  // Debug: Stats HUD Toggle
+  // Stats HUD
   if (state.showStats) {
     statsHud.classList.add('show');
   } else {
@@ -711,41 +262,34 @@ function onUIChange(state: UIState) {
 
 uiState = createUI(onUIChange);
 
-// ─── Resize & Device Orientation ─────────────────────────────────────────────
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  updateBounds();
-});
+// ─── Resize & Device Orientation ────────────────────────────────────────────
+handleResize(updateBounds);
 
 window.addEventListener('deviceorientation', (event) => {
   if (!uiState || !uiState.tiltGravity) return;
-  
+
   let beta = event.beta || 0;
   let gamma = event.gamma || 0;
-  
+
   beta = Math.max(-90, Math.min(90, beta));
   gamma = Math.max(-90, Math.min(90, gamma));
 
   const gravX = (gamma / 90) * 40;
   const gravY = -(beta / 90) * 40;
-  
+
   for (const cube of cubes) {
     cube.physics.gravity.set(gravX, gravY, 0);
   }
 });
 
-// ─── Init ────────────────────────────────────────────────────────────────────
+// ─── Init ───────────────────────────────────────────────────────────────────
 rebuildAllCubes(getSegments(uiState.resolution), 1, uiState.cubeSize);
 onUIChange(uiState);
 
-// ─── Animation Loop ──────────────────────────────────────────────────────────
+// ─── Animation Loop ─────────────────────────────────────────────────────────
 const clock = new THREE.Clock();
 let accumulator = 0;
-const physicsDt = 1 / 120;
 
-// Stats tracking
 let frameCount = 0;
 let lastFpsTime = performance.now();
 let currentFps = 60;
@@ -767,20 +311,20 @@ function animate() {
     lastFpsTime = now;
   }
 
-  // Fixed timestep physics for all cubes
-  while (accumulator >= physicsDt) {
+  // Fixed timestep physics
+  while (accumulator >= PHYSICS_DT) {
     for (const cube of cubes) {
-      cube.physics.update(physicsDt);
+      cube.physics.update(PHYSICS_DT);
     }
-    accumulator -= physicsDt;
+    accumulator -= PHYSICS_DT;
   }
 
-  // Update mesh vertices and debug helpers
+  // Sync mesh vertices & debug helpers
   for (const cube of cubes) {
     const posAttr = cube.geo.attributes.position as THREE.BufferAttribute;
     const array = posAttr.array as Float32Array;
     const mapping = cube.vertexParticleMapping;
-    
+
     for (let i = 0; i < posAttr.count; i++) {
       const p = cube.physics.particles[mapping[i]];
       const base = i * 3;
@@ -790,52 +334,20 @@ function animate() {
     }
     posAttr.needsUpdate = true;
 
-    // Update kinetic speed heatmap vertex colors if active
     if (uiState.showSpeedHeatmap) {
-      const colAttr = cube.geo.attributes.color as THREE.BufferAttribute;
-      const colArray = colAttr.array as Float32Array;
-      for (let i = 0; i < posAttr.count; i++) {
-        const p = cube.physics.particles[mapping[i]];
-        const spd = Math.sqrt(p.velocity.x * p.velocity.x + p.velocity.y * p.velocity.y + p.velocity.z * p.velocity.z);
-        const s = Math.min(1.0, spd / 15.0);
-
-        let r = 0.08, g = 0.35, b = 0.95;
-        if (s < 0.33) {
-          const t = s / 0.33;
-          r = 0.08 + (0.05 - 0.08) * t;
-          g = 0.35 + (0.92 - 0.35) * t;
-          b = 0.95 + (0.75 - 0.95) * t;
-        } else if (s < 0.66) {
-          const t = (s - 0.33) / 0.33;
-          r = 0.05 + (0.98 - 0.05) * t;
-          g = 0.92 + (0.85 - 0.92) * t;
-          b = 0.75 + (0.12 - 0.75) * t;
-        } else {
-          const t = (s - 0.66) / 0.34;
-          r = 0.98 + (1.0 - 0.98) * t;
-          g = 0.85 + (0.12 - 0.85) * t;
-          b = 0.12 + (0.25 - 0.12) * t;
-        }
-
-        const base = i * 3;
-        colArray[base] = r;
-        colArray[base + 1] = g;
-        colArray[base + 2] = b;
-      }
-      colAttr.needsUpdate = true;
+      updateSpeedHeatmap(cube);
     }
 
     cube.geo.computeVertexNormals();
     cube.geo.computeBoundingSphere();
 
-    // Update active debug helpers
     if (uiState.showBox && cube.boxHelper) updateBoxHelper(cube);
     if (uiState.showVelocity && cube.velocityHelper) updateVelocityHelper(cube);
     if (uiState.showStress && cube.stressHelper) updateStressHelper(cube);
     if (uiState.showTrajectory && cube.trajectoryHelper) updateTrajectoryHelper(cube);
   }
 
-  // Update Stats HUD content
+  // Stats HUD
   if (uiState.showStats && cubes.length > 0) {
     const primaryPhysics = cubes[0].physics;
     const particleCount = primaryPhysics.particles.length * cubes.length;

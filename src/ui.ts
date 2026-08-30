@@ -1,63 +1,14 @@
-export type Resolution = 'low' | 'medium' | 'high';
+// Re-export types for backward compatibility
+export type { Resolution, UIState, UIChangeCallback } from './types';
 
 import { setSoundEnabled } from './audio';
+import { RESOLUTION_MAP, MATERIAL_PRESETS, DEFAULT_UI_STATE, getSegments as _getSegments } from './config';
+import type { Resolution, UIState, UIChangeCallback } from './types';
 
-export interface UIState {
-  resolution: Resolution;
-  cubeCount: number;
-  cubeSize: number; // 0.5 to 5.0, default 3.0
-  elasticity: number; // 0.0 to 3.0, default 1.5 (Classic Gelatin)
-  friction: number; // 0.1 to 5.0, default 0.3
-  weight: number; // 0.2 to 3.0, default 1.0
-  pressure: number; // -2.0 to 3.0, default 0.8
-  gravity: number; // 0 (float) to 10 (fast fall), default 5
-  tiltGravity: boolean;
-  textureMode: 'default' | 'rainbow' | 'color' | 'file';
-  customColor: string;
-  textureUrl: string | null;
-  soundEnabled: boolean;
-  showBox: boolean;
-  showVelocity: boolean;
-  showStress: boolean;
-  showTrajectory: boolean;
-  showSpeedHeatmap: boolean;
-  showStats: boolean;
-}
-
-export type UIChangeCallback = (state: UIState) => void;
-
-const RESOLUTION_MAP: Record<Resolution, { label: string; segments: number }> = {
-  low:    { label: 'Low (3×3×3)',    segments: 3 },
-  medium: { label: 'Medium (5×5×5)', segments: 5 },
-  high:   { label: 'High (8×8×8)',   segments: 8 },
-};
-
-export function getSegments(res: Resolution): number {
-  return RESOLUTION_MAP[res].segments;
-}
+export { getSegments } from './config';
 
 export function createUI(onChange: UIChangeCallback): UIState {
-  const state: UIState = {
-    resolution: 'medium',
-    cubeCount: 1,
-    cubeSize: 3.0,
-    elasticity: 1.5, // Default to Gelatin
-    friction: 0.3,
-    weight: 1.0,
-    pressure: 0.8,
-    gravity: 5,
-    tiltGravity: false,
-    textureMode: 'default',
-    customColor: '#ff0055',
-    textureUrl: null,
-    soundEnabled: false,
-    showBox: false,
-    showVelocity: false,
-    showStress: false,
-    showTrajectory: false,
-    showSpeedHeatmap: false,
-    showStats: false,
-  };
+  const state: UIState = { ...DEFAULT_UI_STATE };
 
   // ── Panel container ─────────────────────────────────────────────
   const panel = document.createElement('div');
@@ -184,13 +135,12 @@ export function createUI(onChange: UIChangeCallback): UIState {
     return btn;
   };
 
-  // 6 Material Presets conforming to physical rules (single-word labels)
-  presetsContainer.appendChild(createPresetBtn('🍮 Gelatin', 1.5, 0.3, 1.0, 0.8));
-  presetsContainer.appendChild(createPresetBtn('🛡️ Rubber', 2.6, 3.0, 2.2, 2.0));
-  presetsContainer.appendChild(createPresetBtn('🎈 Balloon', 0.3, 0.2, 1.5, 1.8));
-  presetsContainer.appendChild(createPresetBtn('🧴 Foam', 0.35, 4.2, 1.2, 0.3));
-  presetsContainer.appendChild(createPresetBtn('💨 Marshmallow', 1.8, 0.7, 0.5, 0.5));
-  presetsContainer.appendChild(createPresetBtn('💥 Crushed', 0.4, 3.5, 1.8, -0.6));
+  // Build preset buttons from config
+  for (const preset of MATERIAL_PRESETS) {
+    presetsContainer.appendChild(
+      createPresetBtn(preset.label, preset.elasticity, preset.friction, preset.weight, preset.pressure)
+    );
+  }
   
   presetsGroup.appendChild(presetsContainer);
   body.appendChild(presetsGroup);
