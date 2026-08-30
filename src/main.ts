@@ -127,7 +127,7 @@ const normalShader = {
           n.y * 0.5 + 0.5,
           n.z * 0.3 + 0.7
         );
-        baseColor = pow(baseColor, vec3(0.8));
+        baseColor = pow(max(baseColor, vec3(0.001)), vec3(0.8));
         baseColor *= 1.1;
       }
       
@@ -227,6 +227,18 @@ function createJellyCube(segments: number, size: number, offsetX: number): Jelly
     }
     vertexParticleMapping.push(closestIdx);
   }
+
+  // Initialize vertex positions to starting particle positions
+  const array = posAttr.array as Float32Array;
+  for (let i = 0; i < posAttr.count; i++) {
+    const p = physics.particles[vertexParticleMapping[i]];
+    const base = i * 3;
+    array[base] = p.position.x;
+    array[base + 1] = p.position.y;
+    array[base + 2] = p.position.z;
+  }
+  posAttr.needsUpdate = true;
+  geo.computeBoundingSphere();
 
   return {
     physics,
@@ -794,6 +806,7 @@ window.addEventListener('deviceorientation', (event) => {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 rebuildAllCubes(getSegments(uiState.resolution), 1, uiState.cubeSize);
+onUIChange(uiState);
 
 // ─── Animation Loop ──────────────────────────────────────────────────────────
 const clock = new THREE.Clock();
