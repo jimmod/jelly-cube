@@ -51,10 +51,14 @@ floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
+// ─── 1x1 Dummy Fallback Texture (Ensures sampler2D is always valid) ─────────
+const dummyTexture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
+dummyTexture.needsUpdate = true;
+
 // ─── Normal-color & Speed Heatmap Shader ────────────────────────────────────
 const normalShader = {
   uniforms: {
-    tDiffuse: { value: null },
+    tDiffuse: { value: dummyTexture },
     hasTexture: { value: 0 },
     textureMode: { value: 0 },
     showSpeedHeatmap: { value: 0 },
@@ -62,6 +66,7 @@ const normalShader = {
   },
   vertexShader: `
     attribute float aSpeed;
+    varying vec3 vNormal;
     varying vec3 vWorldPos;
     varying vec2 vUv;
     varying float vSpeed;
@@ -69,27 +74,26 @@ const normalShader = {
     void main() {
       vUv = uv;
       vSpeed = aSpeed;
+      vNormal = normalize(normalMatrix * normal);
       vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
   fragmentShader: `
+    precision highp float;
     uniform sampler2D tDiffuse;
     uniform int hasTexture;
     uniform int textureMode;
     uniform int showSpeedHeatmap;
     uniform vec3 uColor;
     
+    varying vec3 vNormal;
     varying vec3 vWorldPos;
     varying vec2 vUv;
     varying float vSpeed;
 
     void main() {
-      // Compute flat face normal via derivatives (GPU hardware)
-      vec3 fdx = dFdx(vWorldPos);
-      vec3 fdy = dFdy(vWorldPos);
-      vec3 n = normalize(cross(fdx, fdy));
-      
+      vec3 n = normalize(vNormal);
       vec3 baseColor;
       
       if (showSpeedHeatmap == 1) {
@@ -864,6 +868,7 @@ function animate() {
     }
     posAttr.needsUpdate = true;
     if (uiState.showSpeedHeatmap) speedAttr.needsUpdate = true;
+    cube.geo.computeVertexNormals();
     cube.geo.computeBoundingSphere();
 
     // Update active debug helpers
